@@ -223,7 +223,38 @@ Next == \/ StartTxn
         \/ \E txn \in runningTxns :
             TxnReadWrite(txn)
 
+\******************************
+\* Correctness Properties
+\******************************
+
+
+\*  In the serialization graph, we put an edge from one committed transaction T1
+\*  to another committed transaction T2 in the following situations:
+\*  
+\*   - T1 produces a version of x, and T2 produces a later version of x (this is a ww-dependency);
+\*   - T1 produces a version of x, and T2 reads this (or a later) version of x (this is a wr-dependency);
+\*   - T1 reads a version of x, and T2 produces a later version of x (this is a rw-dependency, also
+\*          known as an anti-dependency, and is the only case where T1 and T2 can run concurrently).
+
+CommitTime(txnId) == LET commitOp == CHOOSE op \in Range(txnHistory) : op.txnId = txnId IN
+                     commitOp.time
+
+WWDependency(history, t1, t2) == 
+    \E opT1 \in Range(history) :
+    \E opT2 \in Range(history) :  
+        /\ opT1.txnId = t1 /\ opT2.txnId = t2
+        /\ opT1.type = "write" /\ opT2.type = "write"
+        /\ opT1.key = opT2.key
+        /\ CommitTime(t2) > CommitTime(t1)
+
+SerializationGraph(history) == 
+    LET committedTxnOps == {op \in history : op.type = "commit"} 
+        committedTxnIds == {op.id : op \in committedTxnOps} IN
+    {<<t1, t2>> \in committedTxnIds :
+        \/ WWDependency(history, t1, t2)}
+
+
 =============================================================================
 \* Modification History
-\* Last modified Tue Feb 06 00:18:28 EST 2018 by williamschultz
+\* Last modified Tue Feb 06 00:38:23 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
