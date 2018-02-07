@@ -103,7 +103,7 @@ UpdatedKeys(txnId) ==
                                                 /\ op.txnId = txnId } IN
     { writeOp.key : writeOp \in writeOps}
 
-\* Checks wheter a given transaction is allowed to commit, based on whether it conflicts
+\* Checks whether a given transaction is allowed to commit, based on whether it conflicts
 \* with other concurrent transactions that have already committed.
 TxnCanCommit(txn) ==
     \* There must be no transaction that committed writes during the execution interval of 
@@ -321,5 +321,5 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 =============================================================================
 \* Modification History
-\* Last modified Tue Feb 06 23:39:15 EST 2018 by williamschultz
+\* Last modified Tue Feb 06 23:39:57 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
