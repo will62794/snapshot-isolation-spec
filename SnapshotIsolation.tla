@@ -1,6 +1,7 @@
 ------------------------- MODULE SnapshotIsolation -------------------------
 EXTENDS Naturals, FiniteSets, Sequences, TLC
 
+
 \* Set of all transaction ids.
 CONSTANT txnIds
 
@@ -30,10 +31,11 @@ VARIABLE dataStore
 \* to check the properties of snapshot isolation.
 VARIABLE txnHistory
 
+vars == <<clock, runningTxns, txnSnapshots, dataStore, txnHistory>>
 
 \* Model bounds.
-BNat == 0..12
-BSeq(x) == UNION {[1..n -> x] : n \in BNat}
+BNat == 0..8
+BSeq(x) == UNION {[1..n -> x] : n \in 1..8}
 
 \* Data type definitions and the type invariant for the entire spec.
 DataStoreType == [keys -> (values \cup {Empty})]
@@ -147,7 +149,7 @@ CommitTxn(txn) ==
     /\ clock' = clock + 1
     \* We can leave the snapshot around, since it won't be used again.
     /\ UNCHANGED <<txnSnapshots>>
-        
+
 AbortTxn(txn) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
@@ -195,6 +197,104 @@ TxnUpdate(txn, k, v) ==
            txnSnapshots' = [txnSnapshots EXCEPT ![txn.id] = updatedSnapshot]
     /\ UNCHANGED <<dataStore, runningTxns, clock>>
 
+\******************************
+\* Correctness Properties
+\******************************
+
+\* Returns an set containing all elements that participate in any cycle (i.e. union of all cycles), 
+\* or an empty set if no cycle is found.
+\*   
+\* Taken from https://github.com/pron/amazon-snapshot-spec/blob/master/serializableSnapshotIsolation.tla.
+FindAllNodesInAnyCycle(edges) ==
+
+    LET RECURSIVE findCycleNodes(_, _)   (* startNode, visitedSet *)
+        (* Returns a set containing all elements of some cycle starting at startNode,
+           or an empty set if no cycle is found. 
+         *)
+        findCycleNodes(node, visitedSet) ==
+            IF node \in visitedSet THEN
+                {node}  (* found a cycle, which includes node *)
+            ELSE
+                LET newVisited == visitedSet \union {node}
+                    neighbors == {to : <<from, to>> \in 
+                                           {<<from, to>> \in edges : from = node}}
+                IN  (* Explore neighbors *)
+                    UNION {findCycleNodes(neighbor, newVisited) : neighbor \in neighbors}
+                    
+        startPoints == {from : <<from, to>> \in edges}  (* All nodes with an outgoing edge *)
+    IN 
+        UNION {findCycleNodes(node, {}) : node \in startPoints}
+       
+IsCycle(edges) == FindAllNodesInAnyCycle(edges) /= {}
+
+
+\*  In the serialization graph, we put an edge from one committed transaction T1
+\*  to another committed transaction T2 in the following situations:
+\*  
+\*   - T1 produces a version of x, and T2 produces a later version of x (this is a ww-dependency);
+\*   - T1 produces a version of x, and T2 reads this (or a later) version of x (this is a wr-dependency);
+\*   - T1 reads a version of x, and T2 produces a later version of x (this is a rw-dependency, also
+\*          known as an anti-dependency, and is the only case where T1 and T2 can run concurrently).
+
+CommitTime(h, txnId) == LET commitOp == CHOOSE op \in Range(h) : op.txnId = txnId IN commitOp.time
+BeginTime(h, txnId)  == LET beginOp  == CHOOSE op \in Range(h) : op.txnId = txnId IN beginOp.time
+
+CommittedTxns(h) == LET committedTxnOps == {op \in Range(h) : op.type = "commit"} IN
+                        {op.txnId : op \in committedTxnOps}
+                        
+ReadsByTxn(h, txnId)  == {op \in Range(h) : op.txnId = txnId /\ op.type = "read"}
+WritesByTxn(h, txnId) == {op \in Range(h) : op.txnId = txnId /\ op.type = "write"}
+
+\* T1 wrote to a key that T2 then also wrote to. The First Committer Wins rule
+\* that T1 must have committed before T2 began.
+WWDependency(h, t1Id, t2Id) == 
+    \E op1 \in WritesByTxn(h, t1Id) :
+    \E op2 \in WritesByTxn(h, t2Id) :
+        /\ op1.key = op2.key
+        /\ CommitTime(h, t1Id) < CommitTime(h, t2Id)
+
+\* T1 wrote to a key that T2 then later read, after T1 committed.
+WRDependency(h, t1Id, t2Id) == 
+    \E op1 \in WritesByTxn(h, t1Id) :
+    \E op2 \in ReadsByTxn(h, t2Id) :
+        /\ op1.key = op2.key
+        /\ CommitTime(h, t1Id) < BeginTime(h, t2Id)    
+
+\* T1 read a key that T2 then later wrote to.
+RWDependency(h, t1Id, t2Id) == 
+    \E op1 \in ReadsByTxn(h, t1Id) :
+    \E op2 \in WritesByTxn(h, t2Id) :
+        /\ op1.key = op2.key
+        /\ BeginTime(h, t1Id) < CommitTime(h, t2Id)    
+
+SerializationGraph(history) == 
+    LET committedTxnIds == CommittedTxns(history) IN
+    {<<t1, t2>> \in (committedTxnIds \X committedTxnIds):
+        /\ t1 /= t2
+        /\ \/ WWDependency(history, t1, t2)
+           \/ WRDependency(history, t1, t2)
+           \/ RWDependency(history, t1, t2)}
+
+HistWW == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
+             [type |-> "write"  , txnId |-> 0 , key  |-> "k1" , val |-> "v1"],
+             [type |-> "commit" , txnId |-> 0 , time |-> 1, updatedKeys |-> {"k1"}],
+             [type |-> "begin"  , txnId |-> 1 , time |-> 2],
+             [type |-> "write"  , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
+             [type |-> "commit" , txnId |-> 1 , time |-> 2, updatedKeys |-> {"k1"}]>>
+
+HistWR == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
+             [type |-> "write"  , txnId |-> 0 , key  |-> "k1" , val |-> "v1"],
+             [type |-> "commit" , txnId |-> 0 , time |-> 2, updatedKeys |-> {"k1"}],
+             [type |-> "begin"  , txnId |-> 1 , time |-> 1],
+             [type |-> "read"   , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
+             [type |-> "commit" , txnId |-> 1 , time |-> 3, updatedKeys |-> {}]>>
+
+IsSerializable == ~IsCycle(SerializationGraph(txnHistory))
+
+\******************************
+\* The spec definition.
+\******************************
+
 Init ==  
     /\ runningTxns = {} 
     /\ txnHistory = <<>>
@@ -223,38 +323,10 @@ Next == \/ StartTxn
         \/ \E txn \in runningTxns :
             TxnReadWrite(txn)
 
-\******************************
-\* Correctness Properties
-\******************************
-
-
-\*  In the serialization graph, we put an edge from one committed transaction T1
-\*  to another committed transaction T2 in the following situations:
-\*  
-\*   - T1 produces a version of x, and T2 produces a later version of x (this is a ww-dependency);
-\*   - T1 produces a version of x, and T2 reads this (or a later) version of x (this is a wr-dependency);
-\*   - T1 reads a version of x, and T2 produces a later version of x (this is a rw-dependency, also
-\*          known as an anti-dependency, and is the only case where T1 and T2 can run concurrently).
-
-CommitTime(txnId) == LET commitOp == CHOOSE op \in Range(txnHistory) : op.txnId = txnId IN
-                     commitOp.time
-
-WWDependency(history, t1, t2) == 
-    \E opT1 \in Range(history) :
-    \E opT2 \in Range(history) :  
-        /\ opT1.txnId = t1 /\ opT2.txnId = t2
-        /\ opT1.type = "write" /\ opT2.type = "write"
-        /\ opT1.key = opT2.key
-        /\ CommitTime(t2) > CommitTime(t1)
-
-SerializationGraph(history) == 
-    LET committedTxnOps == {op \in history : op.type = "commit"} 
-        committedTxnIds == {op.id : op \in committedTxnOps} IN
-    {<<t1, t2>> \in committedTxnIds :
-        \/ WWDependency(history, t1, t2)}
+Spec == Init /\ [][Next]_vars
 
 
 =============================================================================
 \* Modification History
-\* Last modified Tue Feb 06 00:38:23 EST 2018 by williamschultz
+\* Last modified Tue Feb 06 19:45:01 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
