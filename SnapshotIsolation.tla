@@ -97,20 +97,6 @@ StartTxn == \E newTxnId \in txnIds :
 (* # {}                                                                    *)
 (***************************************************************************)
 
-\* Find transaction ids concurrent with 'txn' that already committed. Assumes 'txn' has not committed yet.
-ConcurrentCommittedTxns(txn) == 
-    LET historyInds == DOMAIN txnHistory
-        txnIndices == 
-        {i \in historyInds :
-            (\E j \in historyInds :
-                LET opBegin  == txnHistory[i]
-                    opCommit == txnHistory[j] 
-                    tCommit  == opCommit[3] IN
-                /\ opBegin[1] = "BEGIN" /\ opCommit[1] = "COMMIT"
-                /\ opBegin[2] = opCommit[2] \* txn ids must match.
-                /\ tCommit > txn.startTime)} IN
-    {txnHistory[k] : k \in txnIndices}
-
 \* Produces the set of all keys updated by a given transaction id.
 UpdatedKeys(txnId) == 
     LET writeOps == {op \in Range(txnHistory) : /\ op.type = "write" 
@@ -196,6 +182,22 @@ TxnUpdate(txn, k, v) ==
     /\ LET updatedSnapshot == [txnSnapshots[txn.id] EXCEPT ![k] = v] IN
            txnSnapshots' = [txnSnapshots EXCEPT ![txn.id] = updatedSnapshot]
     /\ UNCHANGED <<dataStore, runningTxns, clock>>
+
+\* Checks if a running transaction already read or wrote
+\* to a given key.
+AlreadyTouchedKey(txn, k, opType) == 
+   \E op \in Range(txnHistory) :
+        /\ op.txnId = txn.id
+        /\ op.type = opType
+        /\ op.key = k  
+
+\* A read or write action by a running transaction. We limit transactions
+\* to only read or write the same key once.
+TxnReadWrite(txn) == 
+       \E k \in keys : 
+       \E v \in values :
+            \/ TxnRead(txn, k) /\ ~AlreadyTouchedKey(txn, k, "read")
+            \/ TxnUpdate(txn, k, v) /\ ~AlreadyTouchedKey(txn, k, "write")
 
 \******************************
 \* Correctness Properties
@@ -302,31 +304,22 @@ Init ==
     /\ txnSnapshots = [id \in txnIds |-> Empty]
     /\ dataStore = [k \in keys |-> Empty]
 
-\* Checks if a running transaction already read or wrote
-\* to a given key.
-AlreadyTouchedKey(txn, k, opType) == 
-   \E op \in Range(txnHistory) :
-        /\ op.txnId = txn.id
-        /\ op.type = opType
-        /\ op.key = k  
-
-\* A read or write action by a running transaction. We limit transactions
-\* to only read or write the same key once.
-TxnReadWrite(txn) == 
-       \E k \in keys : 
-       \E v \in values :
-            \/ TxnRead(txn, k) /\ ~AlreadyTouchedKey(txn, k, "read")
-            \/ TxnUpdate(txn, k, v) /\ ~AlreadyTouchedKey(txn, k, "write")
-
+\* Checks if all transactions finished i.e. committed or aborted.
+AllTxnsFinished == LET finishOps == {op \in Range(txnHistory) : op.type \in {"commit", "abort"}} IN
+                        {op.txnId : op \in finishOps} = txnIds
+    
 Next == \/ StartTxn 
         \/ CompleteTxn
         \/ \E txn \in runningTxns :
             TxnReadWrite(txn)
+        \* Having all transactions finish is a valid termination, so we have this 
+        \* action to prevent it from being interpreted as a deadlock.
+        \/ (AllTxnsFinished /\ UNCHANGED vars)
 
-Spec == Init /\ [][Next]_vars
+Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 
 =============================================================================
 \* Modification History
-\* Last modified Tue Feb 06 19:45:01 EST 2018 by williamschultz
+\* Last modified Tue Feb 06 23:39:15 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
