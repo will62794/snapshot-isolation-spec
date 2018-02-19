@@ -238,14 +238,15 @@ IsCycle(edges) == FindAllNodesInAnyCycle(edges) /= {}
 \*   - T1 reads a version of x, and T2 produces a later version of x (this is a rw-dependency, also
 \*          known as an anti-dependency, and is the only case where T1 and T2 can run concurrently).
 
-CommitTime(h, txnId) == LET commitOp == CHOOSE op \in Range(h) : op.txnId = txnId IN commitOp.time
-BeginTime(h, txnId)  == LET beginOp  == CHOOSE op \in Range(h) : op.txnId = txnId IN beginOp.time
+BeginOp(h, txnId)  == CHOOSE op \in Range(h) : op.txnId = txnId /\ op.type = "begin"
+CommitOp(h, txnId) == CHOOSE op \in Range(h) : op.txnId = txnId /\ op.type = "commit"
 
 CommittedTxns(h) == LET committedTxnOps == {op \in Range(h) : op.type = "commit"} IN
                         {op.txnId : op \in committedTxnOps}
                         
 ReadsByTxn(h, txnId)  == {op \in Range(h) : op.txnId = txnId /\ op.type = "read"}
 WritesByTxn(h, txnId) == {op \in Range(h) : op.txnId = txnId /\ op.type = "write"}
+IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
 
 \* T1 wrote to a key that T2 then also wrote to. The First Committer Wins rule
 \* that T1 must have committed before T2 began.
@@ -253,21 +254,22 @@ WWDependency(h, t1Id, t2Id) ==
     \E op1 \in WritesByTxn(h, t1Id) :
     \E op2 \in WritesByTxn(h, t2Id) :
         /\ op1.key = op2.key
-        /\ CommitTime(h, t1Id) < CommitTime(h, t2Id)
+        /\ CommitOp(h, t1Id).time < CommitOp(h, t2Id).time
 
 \* T1 wrote to a key that T2 then later read, after T1 committed.
 WRDependency(h, t1Id, t2Id) == 
     \E op1 \in WritesByTxn(h, t1Id) :
     \E op2 \in ReadsByTxn(h, t2Id) :
         /\ op1.key = op2.key
-        /\ CommitTime(h, t1Id) < BeginTime(h, t2Id)    
+        /\ CommitOp(h, t1Id).time < BeginOp(h, t2Id).time   
 
 \* T1 read a key that T2 then later wrote to.
 RWDependency(h, t1Id, t2Id) == 
     \E op1 \in ReadsByTxn(h, t1Id) :
     \E op2 \in WritesByTxn(h, t2Id) :
         /\ op1.key = op2.key
-        /\ BeginTime(h, t1Id) < CommitTime(h, t2Id)    
+        /\ IndexOfOp(h, op2) > IndexOfOp(h, op1)           \* T2's write occurred after T1's read.
+        /\ BeginOp(h, t1Id).time < CommitOp(h, t2Id).time  \* T1 starts before T2 commits.
 
 SerializationGraph(history) == 
     LET committedTxnIds == CommittedTxns(history) IN
@@ -290,8 +292,53 @@ HistWR == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
              [type |-> "begin"  , txnId |-> 1 , time |-> 1],
              [type |-> "read"   , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
              [type |-> "commit" , txnId |-> 1 , time |-> 3, updatedKeys |-> {}]>>
+             
+\*
+\* Write Skew history example: 
+\*   
+\* H2: r1(x=50) r1(y=50) r2(x=50) r2(y=50) w1(x=-20) w2(y=-30) c1 c2
+\*
 
-IsSerializable == ~IsCycle(SerializationGraph(txnHistory))
+WriteSkewAnomaly == <<
+    [type |-> "begin",  txnId |-> 1, time |-> 1],                       
+    [type |-> "begin",  txnId |-> 2, time |-> 2],
+    [type |-> "read",   txnId |-> 1, key |-> "X"],                      
+    [type |-> "read",   txnId |-> 1, key |-> "Y"],                      
+    [type |-> "read",   txnId |-> 2, key |-> "X"],                      
+    [type |-> "read",   txnId |-> 2, key |-> "Y"],                    
+    [type |-> "write",  txnId |-> 1, key |-> "X", val |-> 30],           
+    [type |-> "write",  txnId |-> 2, key |-> "Y", val |-> 20],        
+    [type |-> "commit", txnId |-> 1, time |-> 3, updatedKeys |-> {"X"}],
+    [type |-> "commit", txnId |-> 2, time |-> 4, updatedKeys |-> {"Y"}]>>
+
+
+ReadOnlyAnomaly == <<
+    (* preamble: create keys that are used later *)
+    [type |-> "begin",  txnId |-> 0, time |-> 0], 
+    [type |-> "write",  txnId |-> 0, key |-> "K_X", val |-> 0], 
+    [type |-> "write",  txnId |-> 0, key |-> "K_Y", val |-> 0], 
+    [type |-> "commit", txnId |-> 0, time |-> 1, updatedKeys |-> {"K_X", "K_Y"}],
+    
+    (* the history from the paper *) 
+                     [type |-> "begin",  txnId |-> 2, time |-> 2], 
+    (* R2(X0,0)   *) [type |-> "read",   txnId |-> 2, key |-> "K_X", ver |-> "T_0"], 
+    (* R2(Y0,0)   *) [type |-> "read",   txnId |-> 2, key |-> "K_Y", ver |-> "T_0"],
+                      
+                     [type |-> "begin",  txnId |-> 1, time |-> 3], 
+    (* R1(Y0,0)   *) [type |-> "read",   txnId |-> 1, key |-> "K_Y"], 
+    (* W1(Y1,20)  *) [type |-> "write",  txnId |-> 1, key |-> "K_Y", val |-> 20],
+    (* C1         *) [type |-> "commit", txnId |-> 1, time |-> 4, updatedKeys |-> {"K_Y"}],
+     
+                     [type |-> "begin",  txnId |-> 3, time |-> 5], 
+    (* R3(X0,0)   *) [type |-> "read",   txnId |-> 3, key |-> "K_X", ver |-> "T_0"], 
+    (* R3(Y1,20)  *) [type |-> "read",   txnId |-> 3, key |-> "K_Y", ver |-> "T_1"], 
+    (* C3         *) [type |-> "commit", txnId |-> 3, time |-> 6, updatedKeys |-> {}],
+                      
+    (* W2(X2,-11) *) [type |-> "write",  txnId |-> 2, key |-> "K_X", val |-> 11], 
+    (* C2         *) [type |-> "commit", txnId |-> 2, time |-> 7, updatedKeys |-> {"K_X"}]
+    >>
+
+IsSerializable(h) == ~IsCycle(SerializationGraph(h))
 
 \******************************
 \* The spec definition.
@@ -321,5 +368,5 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 =============================================================================
 \* Modification History
-\* Last modified Tue Feb 06 23:39:57 EST 2018 by williamschultz
+\* Last modified Mon Feb 19 00:16:39 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
