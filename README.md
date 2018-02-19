@@ -4,7 +4,7 @@ This is a TLA+ specification that can be used for exploring and understanding th
 
 # Verifying Properties with TLC
 
-One of the great parts about a spec written in TLA+ is that you can verify certain properties using the TLC model checker. There a few properties already defined in the specification that you can try to verify yourself. Two concurrency anomalies that snapshot isolation allows, Write Skew and a ["read only" transaction anomaly](https://www.cs.umb.edu/~poneil/ROAnom.pdf) are included with examples, and as a `ReadOnlyAnomaly` property that can be checked using TLC. The main invariant to check is that every history is serializable. This can be expressed with the following invariant:
+One of the great parts about a spec written in TLA+ is that you can verify certain properties using the TLC model checker. There a few properties already defined in the specification that you can try to verify yourself. Two concurrency anomalies that snapshot isolation allows, Write Skew and a ["read only" transaction anomaly](https://www.cs.umb.edu/~poneil/ROAnom.pdf) are included with examples, and there is a `ReadOnlyAnomaly` property that can be checked using TLC. The main invariant to check is that every history is serializable (which is expected to be violated by anomalous histories). This can be expressed with the following invariant:
 
 	IsSerializable(txnHistory)
 
