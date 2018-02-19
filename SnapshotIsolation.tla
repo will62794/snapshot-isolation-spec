@@ -89,12 +89,13 @@ StartTxn == \E newTxnId \in txnIds :
                           
                         
 (***************************************************************************)
-(* When a transaction $T_i$ is ready to commit, it obeys the "First        *)
-(* Committer Wins" rule.  $T_i$ will only successfully commit if no        *)
+(* When a transaction T0 is ready to commit, it obeys the "First           *)
+(* Committer Wins" rule.  T0 will only successfully commit if no           *)
 (* concurrent transaction has already committed writes of data objects     *)
-(* that $T_i$ intends to write.  Transactions $T_i$,T_k$ are considered    *)
-(* concurrent if [start(T_i), commit(T_i)] \cap [start(T_k), commit(T_k)]  *)
-(* # {}                                                                    *)
+(* that T0 intends to write.  Transactions T0, T1 are considered           *)
+(* concurrent if:                                                           *)
+(*                                                                         *)
+(* `^ [start(T0), commit(T0)] \cap [start(T1), commit(T1)] \neq \{\}  ^'   *)
 (***************************************************************************)
 
 \* Produces the set of all keys updated by a given transaction id.
@@ -292,14 +293,18 @@ HistWR == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
              [type |-> "begin"  , txnId |-> 1 , time |-> 1],
              [type |-> "read"   , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
              [type |-> "commit" , txnId |-> 1 , time |-> 3, updatedKeys |-> {}]>>
-             
-\*
-\* Write Skew history example: 
-\*   
-\* H2: r1(x=50) r1(y=50) r2(x=50) r2(y=50) w1(x=-20) w2(y=-30) c1 c2
-\*
 
-WriteSkewAnomaly == <<
+             
+\***********************************************************************************
+\* Write Skew history example from Michael Cahill's Phd thesis: 
+\*
+\* Section 2.5.1, pg. 16
+\* https://ses.library.usyd.edu.au/bitstream/2123/5353/1/michael-cahill-2009-thesis.pdf
+\* 
+\* H: r1(x=50) r1(y=50) r2(x=50) r2(y=50) w1(x=-20) w2(y=-30) c1 c2
+\*
+\***********************************************************************************
+WriteSkewAnomalyTest == <<
     [type |-> "begin",  txnId |-> 1, time |-> 1],                       
     [type |-> "begin",  txnId |-> 2, time |-> 2],
     [type |-> "read",   txnId |-> 1, key |-> "X"],                      
@@ -312,7 +317,7 @@ WriteSkewAnomaly == <<
     [type |-> "commit", txnId |-> 2, time |-> 4, updatedKeys |-> {"Y"}]>>
 
 
-ReadOnlyAnomaly == <<
+ReadOnlyAnomalyTest == <<
     (* preamble: create keys that are used later *)
     [type |-> "begin",  txnId |-> 0, time |-> 0], 
     [type |-> "write",  txnId |-> 0, key |-> "K_X", val |-> 0], 
@@ -339,6 +344,23 @@ ReadOnlyAnomaly == <<
     >>
 
 IsSerializable(h) == ~IsCycle(SerializationGraph(h))
+
+\***********************************************************************************
+\* Does there exist a non-serializable transaction history such that 
+\* it contains a read-only transaction T, and removing T from the 
+\* history makes the history serializable.
+\***********************************************************************************
+ReadOnlyAnomaly(h) == 
+    \* History is non-serializable.
+    /\ ~IsSerializable(h)
+    /\ \E txnId \in CommittedTxns(h) :
+        \* Transaction only did reads.
+        /\ WritesByTxn(h, txnId) = {}
+        \* Removing the transaction makes the history serializable
+        /\ LET txnOpsFilter(t) == (t.txnId # txnId)
+           hWithoutTxn == SelectSeq(h, txnOpsFilter) IN
+           IsSerializable(hWithoutTxn)
+
 
 \******************************
 \* The spec definition.
@@ -368,5 +390,5 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Feb 19 00:16:39 EST 2018 by williamschultz
+\* Last modified Mon Feb 19 14:35:32 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
