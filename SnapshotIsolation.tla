@@ -57,6 +57,17 @@ TypeInvariant ==
 \* Generic helper function.
 Range(f) == {f[x] : x \in DOMAIN f}
 
+\**********************************************************
+\* Helper functions for querying transaction histories.
+\**********************************************************
+
+BeginOp(h, txnId)  == CHOOSE op \in Range(h) : op.txnId = txnId /\ op.type = "begin"
+CommitOp(h, txnId) == CHOOSE op \in Range(h) : op.txnId = txnId /\ op.type = "commit"
+CommittedTxns(h) == {op.txnId : op \in {op \in Range(h) : op.type = "commit"}}                   
+ReadsByTxn(h, txnId)  == {op \in Range(h) : op.txnId = txnId /\ op.type = "read"}
+WritesByTxn(h, txnId) == {op \in Range(h) : op.txnId = txnId /\ op.type = "write"}
+IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
+
 (***************************************************************************)
 (* When a transaction starts, it gets a new, unique transaction id and is  *)
 (* added to the set of running transactions.  It also "copies" a local     *)
@@ -152,11 +163,15 @@ AbortTxn(txn) ==
     \* since it won't be used again.
     /\ UNCHANGED <<dataStore, txnSnapshots>>
 
-\* An action that ends a running transaction by either committing or aborting it.
+\* An action that ends a running transaction by either committing or aborting it. To exclude some uninteresting 
+\* histories, we require that a transaction does at least one operation before committing or aborting.
 CompleteTxn == 
     \E txn \in runningTxns :
-        \/ CommitTxn(txn)
-        \/ AbortTxn(txn)
+        \* Must not be a no-op transaction.
+        /\ (WritesByTxn(txnHistory, txn.id) \cup ReadsByTxn(txnHistory, txn.id)) /= {}
+        \* Commit or abort the transaction.
+        /\ \/ CommitTxn(txn)
+           \/ AbortTxn(txn)
 
 (***************************************************************************)
 (* Read and write actions on the key-value data store.                     *)
@@ -184,8 +199,7 @@ TxnUpdate(txn, k, v) ==
            txnSnapshots' = [txnSnapshots EXCEPT ![txn.id] = updatedSnapshot]
     /\ UNCHANGED <<dataStore, runningTxns, clock>>
 
-\* Checks if a running transaction already read or wrote
-\* to a given key.
+\* Checks if a running transaction already read or wrote to a given key.
 AlreadyTouchedKey(txn, k, opType) == 
    \E op \in Range(txnHistory) :
         /\ op.txnId = txn.id
@@ -204,10 +218,11 @@ TxnReadWrite(txn) ==
 \* Correctness Properties
 \******************************
 
-\* Returns an set containing all elements that participate in any cycle (i.e. union of all cycles), 
+\* Returns a set containing all elements that participate in any cycle (i.e. union of all cycles), 
 \* or an empty set if no cycle is found.
 \*   
-\* Taken from https://github.com/pron/amazon-snapshot-spec/blob/master/serializableSnapshotIsolation.tla.
+\* Taken from: 
+\* https://github.com/pron/amazon-snapshot-spec/blob/master/serializableSnapshotIsolation.tla.
 FindAllNodesInAnyCycle(edges) ==
 
     LET RECURSIVE findCycleNodes(_, _)   (* startNode, visitedSet *)
@@ -230,24 +245,15 @@ FindAllNodesInAnyCycle(edges) ==
        
 IsCycle(edges) == FindAllNodesInAnyCycle(edges) /= {}
 
-
+\***************************************************************************************
 \*  In the serialization graph, we put an edge from one committed transaction T1
 \*  to another committed transaction T2 in the following situations:
 \*  
-\*   - T1 produces a version of x, and T2 produces a later version of x (this is a ww-dependency);
-\*   - T1 produces a version of x, and T2 reads this (or a later) version of x (this is a wr-dependency);
-\*   - T1 reads a version of x, and T2 produces a later version of x (this is a rw-dependency, also
+\*  - T1 produces a version of x, and T2 produces a later version of x (this is a ww-dependency);
+\*  - T1 produces a version of x, and T2 reads this (or a later) version of x (this is a wr-dependency);
+\*  - T1 reads a version of x, and T2 produces a later version of x (this is a rw-dependency, also
 \*          known as an anti-dependency, and is the only case where T1 and T2 can run concurrently).
-
-BeginOp(h, txnId)  == CHOOSE op \in Range(h) : op.txnId = txnId /\ op.type = "begin"
-CommitOp(h, txnId) == CHOOSE op \in Range(h) : op.txnId = txnId /\ op.type = "commit"
-
-CommittedTxns(h) == LET committedTxnOps == {op \in Range(h) : op.type = "commit"} IN
-                        {op.txnId : op \in committedTxnOps}
-                        
-ReadsByTxn(h, txnId)  == {op \in Range(h) : op.txnId = txnId /\ op.type = "read"}
-WritesByTxn(h, txnId) == {op \in Range(h) : op.txnId = txnId /\ op.type = "write"}
-IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
+\***************************************************************************************
 
 \* T1 wrote to a key that T2 then also wrote to. The First Committer Wins rule
 \* that T1 must have committed before T2 began.
@@ -390,5 +396,5 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Feb 19 14:35:32 EST 2018 by williamschultz
+\* Last modified Tue Feb 20 09:54:50 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
