@@ -357,7 +357,7 @@ IsCycle(edges) == FindAllNodesInAnyCycle(edges) /= {}
 (*                                                                                                *)
 (**************************************************************************************************)
 
-\* T1 wrote to a key that T2 then also wrote to. The First Committer Wins rule
+\* T1 wrote to a key that T2 then also wrote to. The First Committer Wins rule implies
 \* that T1 must have committed before T2 began.
 WWDependency(h, t1Id, t2Id) == 
     \E op1 \in WritesByTxn(h, t1Id) :
@@ -380,7 +380,8 @@ RWDependency(h, t1Id, t2Id) ==
         /\ IndexOfOp(h, op2) > IndexOfOp(h, op1)           \* T2's write occurred after T1's read.
         /\ BeginOp(h, t1Id).time < CommitOp(h, t2Id).time  \* T1 starts before T2 commits.
 
-\* Produces the serialization graph as defined above, for a given history.
+\* Produces the serialization graph as defined above, for a given history. This graph is produced 
+\* by defining the appropriate set comprehension, where the produced set contains all the edges of the graph.
 SerializationGraph(history) == 
     LET committedTxnIds == CommittedTxns(history) IN
     {<<t1, t2>> \in (committedTxnIds \X committedTxnIds):
@@ -393,7 +394,6 @@ SerializationGraph(history) ==
 IsSerializable(h) == ~IsCycle(SerializationGraph(h))
 
 \* Examples of each dependency type.
-
 HistWW == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
              [type |-> "write"  , txnId |-> 0 , key  |-> "k1" , val |-> "v1"],
              [type |-> "commit" , txnId |-> 0 , time |-> 1, updatedKeys |-> {"k1"}],
@@ -403,18 +403,25 @@ HistWW == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
 
 HistWR == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
              [type |-> "write"  , txnId |-> 0 , key  |-> "k1" , val |-> "v1"],
-             [type |-> "commit" , txnId |-> 0 , time |-> 2, updatedKeys |-> {"k1"}],
-             [type |-> "begin"  , txnId |-> 1 , time |-> 1],
+             [type |-> "commit" , txnId |-> 0 , time |-> 1, updatedKeys |-> {"k1"}],
+             [type |-> "begin"  , txnId |-> 1 , time |-> 2],
              [type |-> "read"   , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
              [type |-> "commit" , txnId |-> 1 , time |-> 3, updatedKeys |-> {}]>>
 
 HistRW == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
-             [type |-> "write"  , txnId |-> 0 , key  |-> "k1" , val |-> "v1"],
-             [type |-> "commit" , txnId |-> 0 , time |-> 2, updatedKeys |-> {"k1"}],
+             [type |-> "read"   , txnId |-> 0 , key  |-> "k1" , val |-> "empty"],
              [type |-> "begin"  , txnId |-> 1 , time |-> 1],
-             [type |-> "read"   , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
-             [type |-> "commit" , txnId |-> 1 , time |-> 3, updatedKeys |-> {}]>>
-     
+             [type |-> "write"   , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
+             [type |-> "commit" , txnId |-> 1 , time |-> 2, updatedKeys |-> {}],
+             [type |-> "commit" , txnId |-> 0 , time |-> 3, updatedKeys |-> {"k1"}]>>
+
+\* A simple invariant to test the correctness of dependency definitions.
+WWDependencyCorrect == WWDependency(HistWW, 0, 1)
+WRDependencyCorrect == WRDependency(HistWR, 0, 1)
+RWDependencyCorrect == RWDependency(HistRW, 0, 1)
+MVSGDependencyCorrect == WWDependencyCorrect /\ WRDependencyCorrect /\ RWDependencyCorrect
+
+   
      
 (**************************************************************************************************)
 (* Examples of concurrency phenomena under Snapshot Isolation.  These are for demonstration       *)
@@ -494,5 +501,5 @@ ReadOnlyAnomaly(h) ==
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Feb 21 23:23:08 EST 2018 by williamschultz
+\* Last modified Wed Feb 21 23:36:37 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
