@@ -66,18 +66,14 @@ VARIABLE txnHistory
 
 vars == <<clock, runningTxns, txnSnapshots, dataStore, txnHistory>>
 
-\* Model bounds.
-BNat == 0..8
-BSeq(x) == UNION {[1..n -> x] : n \in 1..8}
-
 
 (**************************************************************************************************)
 (* Data type definitions.                                                                         *)
 (**************************************************************************************************)
 
 DataStoreType == [keys -> (values \cup {Empty})]
-BeginOpType   == [type : {"begin"}  , txnId : txnIds , time : BNat]
-CommitOpType  == [type : {"commit"} , txnId : txnIds , time : BNat, updatedKeys : SUBSET keys]
+BeginOpType   == [type : {"begin"}  , txnId : txnIds , time : Nat]
+CommitOpType  == [type : {"commit"} , txnId : txnIds , time : Nat, updatedKeys : SUBSET keys]
 WriteOpType   == [type : {"write"}  , txnId : txnIds , key: SUBSET keys , val : SUBSET values]
 ReadOpType    == [type : {"read"}   , txnId : txnIds , key: SUBSET keys , val : SUBSET values]
 AnyOpType     == UNION {BeginOpType, CommitOpType, WriteOpType, ReadOpType}
@@ -88,12 +84,12 @@ AnyOpType     == UNION {BeginOpType, CommitOpType, WriteOpType, ReadOpType}
 
 TypeInvariant == 
     \* This seems expensive to check with TLC, so disable it for now.
-\*  /\ txnHistory   \in BSeq(AnyOpType)
+\*  /\ txnHistory   \in Seq(AnyOpType)
     /\ dataStore    \in DataStoreType
     /\ txnSnapshots \in [txnIds -> (DataStoreType \cup {Empty})]
     /\ runningTxns  \in SUBSET [ id : txnIds, 
-                                startTime  : BNat, 
-                                commitTime : BNat \cup {Empty}]
+                                startTime  : Nat, 
+                                commitTime : Nat \cup {Empty}]
 
 Init ==  
     /\ runningTxns = {} 
@@ -498,5 +494,5 @@ ReadOnlyAnomaly(h) ==
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Feb 21 23:17:18 EST 2018 by williamschultz
+\* Last modified Wed Feb 21 23:23:08 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
