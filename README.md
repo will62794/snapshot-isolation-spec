@@ -13,13 +13,13 @@ There a few properties already defined in the specification that you can try to 
 
 You can choose `Spec` as the temporal formula and set either of the following two expressions as invariants to check:
 
-**1. Assert that all histories are serializable:**
+*Assert that all histories are serializable:*
 
 ```tla
  IsSerializable(txnHistory)
  ```
 
-**2. Assert that there are no non-serializable histories with a read-only transaction anomaly:**
+*Assert that there are no non-serializable histories with a read-only transaction anomaly:*
 
 ```tla
  ~ReadOnlyAnomaly(txnHistory)
