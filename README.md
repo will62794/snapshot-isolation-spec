@@ -26,3 +26,44 @@ You can choose `Spec` as the temporal formula and set either of the following tw
  ```
 
 Both of these invariants should be violated in specific cases. By running the model checker you can see what kinds of histories violate these invariants.
+
+## Model Checking Statistics
+
+For reference, I was able to produce a trace that violated the `~ReadOnlyAnomaly(txnHistory)` invariant in 1 hour and 4 minutes running TLC on a 12-core (Intel i7-4930K CPU @ 3.40GHz) Ubuntu Linux workstation. It generated a bit over 405 million distinct states and it took a 12 step trace to violate the invariant. While TLC was running it seemed to produce at least ~80GB of auxiliary data on disk, but I did not measure it precisely. You can see the detailed output of this run below:
+
+TLC command line parameters:
+```
+% java tlc2.TLC -cleanup -gzip -workers 12 -metadir /hdd/tlc_states -config MC.cfg MC.tla
+
+TLC2 Version 2.12 of 29 January 2018
+Running breadth-first search Model-Checking with 12 workers on 12 cores with 7143MB heap and 64MB offheap memory (Linux 4.8.0-59-generic amd64, Oracle Corporation 1.8.0_131 x86_6
+4).
+```
+
+TLC invariant violation output (only last state of trace shown):
+
+```
+State 12: <Next line 288, col 12 to line 290, col 36 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> (k1 :> Empty @@ k2 :> v1) @@
+  t1 :> (k1 :> v1 @@ k2 :> Empty) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> v1)
+/\ txnHistory = << [type |-> "begin", txnId |-> t0, time |-> 1],
+                   [type |-> "read", txnId |-> t0, key |-> k1, val |-> Empty],
+                   [type |-> "begin", txnId |-> t1, time |-> 2],
+                   [type |-> "write", txnId |-> t1, key |-> k1, val |-> v1],
+                   [type |-> "commit", txnId |-> t1, time |-> 3, updatedKeys |-> {k1}],
+                   [type |-> "begin", txnId |-> t2, time |-> 4],
+                   [type |-> "read", txnId |-> t2, key |-> k1, val |-> v1],
+                   [type |-> "read", txnId |-> t2, key |-> k2, val |-> Empty],
+                   [type |-> "write", txnId |-> t0, key |-> k2, val |-> v1],
+                   [type |-> "commit", txnId |-> t0, time |-> 5, updatedKeys |-> {k2}],
+                   [type |-> "commit", txnId |-> t2, time |-> 6, updatedKeys |-> {}] >>
+/\ clock = 6
+/\ runningTxns = {}
+
+529068865 states generated, 405673796 distinct states found, 357574338 states left on queue.
+The depth of the complete state graph search is 13.
+The average outdegree of the complete state graph is 8 (minimum is 0, the maximum 17 and the 95th percentile is 12).
+Finished in 01h 04min at (2018-02-21 23:41:43)
+```
