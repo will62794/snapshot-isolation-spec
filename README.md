@@ -10,8 +10,8 @@ One of the great parts about a spec written in TLA+ is that you can verify certa
 
 To get started with a TLC model, you can use the following parameters:
 
-	txnIds 	<- {t0, t1, t1} (Symmetry set of model values)
-	keys 	<- {k1, k2}		(Symmetry set of model values)
-	values 	<- {v1, v2}		(Symmetry set of model values)
+	txnIds 	<- {t0, t1, t2} 	(Symmetry set of model values)
+	keys 	<- {k1, k2}			(Symmetry set of model values)
+	values 	<- {v1, v2}			(Symmetry set of model values)
 
 And set either `IsSerializable(txnHistory)` or `~ReadOnlyAnomaly(txnHistory)` as the invariant to check. You can choose `Spec` as the temporal formula.
