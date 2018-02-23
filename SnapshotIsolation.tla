@@ -459,6 +459,42 @@ WRDependencyCorrect == WRDependency(HistWR, 0, 1)
 RWDependencyCorrect == RWDependency(HistRW, 0, 1)
 MVSGDependencyCorrect == WWDependencyCorrect /\ WRDependencyCorrect /\ RWDependencyCorrect
 
+
+(**************************************************************************************************)
+(* View serializability checking                                                                  *)
+(**************************************************************************************************)
+
+Maximum(S) == CHOOSE x \in S : \A y \in S : y <= x
+
+\* The set of all permutations of elements of a set S whose length are the cardinality of S.
+SeqPermutations(S) == LET D == 1..Cardinality(S) IN {f \in [D -> S] : \A w \in S : \E v \in D : f[v]=w}
+
+\* Flattens a sequence of sequences.
+RECURSIVE Flatten(_)
+Flatten(seq) == IF Len(seq) = 0 THEN <<>> ELSE Head(seq) \o Flatten(Tail(seq))
+
+OpsForTxn(h, txnId) == SelectSeq(h, LAMBDA t : t.txnId = txnId)
+SerialHistories(h) == 
+    LET serialOrderings == SeqPermutations({ OpsForTxn(h, tid) : tid \in CommittedTxns(h) }) IN
+    {Flatten(o) : o \in serialOrderings}
+
+ExecuteSerialHistory(h) ==
+    [i \in DOMAIN h |-> 
+        IF h[i].type = "read" 
+            THEN LET prevWriteOpInds == {ind \in DOMAIN h : 
+                                                /\  ind < i 
+                                                /\  h[ind].type = "write"
+                                                /\  h[ind].key = h[i].key} IN
+                     IF prevWriteOpInds = {} 
+                        THEN [h[i] EXCEPT !.val = Empty]
+                        ELSE LET latestWriteOpToKey == h[Maximum(prevWriteOpInds)] IN
+                             [h[i] EXCEPT !.val = latestWriteOpToKey.val] 
+            ELSE h[i]]
+
+ViewEquivalent(h1, h2) == 
+    \A tid \in CommittedTxns(h1) : OpsForTxn(h1, tid) = OpsForTxn(h2, tid)
+
+IsViewSerializable(h) == \E h2 \in SerialHistories(h) : ViewEquivalent(h, ExecuteSerialHistory(h2))
    
      
 (**************************************************************************************************)
@@ -486,10 +522,10 @@ MVSGDependencyCorrect == WWDependencyCorrect /\ WRDependencyCorrect /\ RWDepende
 WriteSkewAnomalyTest == <<
     [type |-> "begin",  txnId |-> 1, time |-> 1],                       
     [type |-> "begin",  txnId |-> 2, time |-> 2],
-    [type |-> "read",   txnId |-> 1, key |-> "X"],                      
-    [type |-> "read",   txnId |-> 1, key |-> "Y"],                      
-    [type |-> "read",   txnId |-> 2, key |-> "X"],                      
-    [type |-> "read",   txnId |-> 2, key |-> "Y"],                    
+    [type |-> "read",   txnId |-> 1, key |-> "X", val |-> "Empty"],                      
+    [type |-> "read",   txnId |-> 1, key |-> "Y", val |-> "Empty"],                      
+    [type |-> "read",   txnId |-> 2, key |-> "X", val |-> "Empty"],                      
+    [type |-> "read",   txnId |-> 2, key |-> "Y", val |-> "Empty"],                    
     [type |-> "write",  txnId |-> 1, key |-> "X", val |-> 30],           
     [type |-> "write",  txnId |-> 2, key |-> "Y", val |-> 20],        
     [type |-> "commit", txnId |-> 1, time |-> 3, updatedKeys |-> {"X"}],
@@ -538,5 +574,5 @@ ReadOnlyAnomaly(h) ==
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Feb 22 23:12:41 EST 2018 by williamschultz
+\* Last modified Fri Feb 23 01:17:27 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
