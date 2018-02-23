@@ -2,28 +2,48 @@
 EXTENDS Naturals, FiniteSets, Sequences, TLC
 
 (**************************************************************************************************)
+(*                                                                                                *)
 (* This is a specification of snapshot isolation.  It is based on various sources, integrating    *)
 (* ideas and definitions from:                                                                    *)
 (*                                                                                                *)
 (*     ``Making Snapshot Isolation Serializable", Fekete et al., 2005                             *)
 (*     https://www.cse.iitb.ac.in/infolab/Data/Courses/CS632/2009/Papers/p492-fekete.pdf          *)
 (*                                                                                                *)
-(*     "Serializable Isolation for Snapshot Databases", Cahill, 2009                              *)
+(*     ``Serializable Isolation for Snapshot Databases", Cahill, 2009                             *)
 (*     https://ses.library.usyd.edu.au/bitstream/2123/5353/1/michael-cahill-2009-thesis.pdf       *)
 (*                                                                                                *)
-(*     "Debugging Designs", Chris Newcombe, 2011                                                  *)
+(*     ``A Read-Only Transaction Anomaly Under Snapshot Isolation", Fekete et al.                 *)
+(*     https://www.cs.umb.edu/~poneil/ROAnom.pdf                                                  *)
+(*                                                                                                *)
+(*     ``Debugging Designs", Chris Newcombe, 2011                                                 *)
 (*     https://github.com/pron/amazon-snapshot-spec/blob/master/DebuggingDesigns.pdf              *)
 (*                                                                                                *)
 (* This spec tries to model things at a very high level of abstraction, so as to communicate the  *)
 (* important concepts of snapshot isolation, as opposed to how a system might actually implement  *)
-(* it.                                                                                            *)
+(* it.  Correctness properties and their detailed explanations are included at the end of this    *)
+(* spec.  We draw the basic definition of snapshot isolation from Definition 1.1 of Fekete's      *)
+(* "Read-Only" anomaly paper:                                                                     *)
 (*                                                                                                *)
-(* There is a fixed set of unique transaction ids, and each transaction can execute read/write    *)
-(* operations on a key-value store.  We model an actual key-value data store in this spec, but    *)
-(* this wouldn't be necessary for verifying the abstract properties of snapshot isolation, since  *)
-(* the serializability definitions used below don't depend on the actual data that is being read  *)
-(* or written, only the dependency relationships between the reads and writes of concurrent       *)
-(* transactions.                                                                                  *)
+(*                                                                                                *)
+(*     "...we assume time is measured by a counter that advances whenever any                     *)
+(* transaction starts or commits, and we designate the time when transaction Ti starts as         *)
+(* start(Ti) and the time when Ti commits as commit(Ti).                                          *)
+(*                                                                                                *)
+(* Definition 1.1: Snapshot Isolation (SI).  A transaction Ti executing under SI conceptually     *)
+(* reads data from the committed state of the database as of time start(Ti) (the snapshot), and   *)
+(* holds the results of its own writes in local memory store, so if it reads data it has written  *)
+(* it will read its own output.  Predicates evaluated by Ti are also based on rows and index      *)
+(* entry versions from the committed state of the database at time start(Ti), adjusted to take    *)
+(* Ti's own writes into account.  Snapshot Isolation also must obey a "First Committer (Updater)  *)
+(* Wins" rule...The interval in time from the start to the commit of a transaction, represented   *)
+(* [Start(Ti), Commit(Ti)], is called its transactional lifetime.  We say two transactions T1 and *)
+(* T2 are concurrent if their transactional lifetimes overlap, i.e., [start(T1), commit(T1)] ∩    *)
+(* [start(T2), commit(T2)] ≠ Φ.  Writes by transactions active after Ti starts, i.e., writes by   *)
+(* concurrent transactions, are not visible to Ti.  When Ti is ready to commit, it obeys the      *)
+(* First Committer Wins rule, as follows: Ti will successfully commit if and only if no           *)
+(* concurrent transaction Tk has already committed writes (updates) of rows or index entries that *)
+(* Ti intends to write."                                                                          *)
+(*                                                                                                *)
 (**************************************************************************************************)
 
 
@@ -51,18 +71,26 @@ VARIABLE clock
 \* The set of all currently running transactions.
 VARIABLE runningTxns
 
-\* The set of snapshots needed for all running transactions. Each snapshot 
-\* represents the entire state of the data store as of a given point in time. 
-\* It is a function from transaction ids to data store snapshots.
-VARIABLE txnSnapshots
-
-\* The key-value data store.
-VARIABLE dataStore
-
 \* The full history of all transaction operations. It is modeled as a linear 
 \* sequence of events. Such a history would likely never exist in a real implementation, 
 \* but it is used in the model to check the properties of snapshot isolation.
 VARIABLE txnHistory
+
+\* (NOT NECESSARY)
+\* The key-value data store. In this spec, we model a data store explicitly, even though it is not actually
+\* used for the verification of any correctness properties. This was added initially as an attempt the make the
+\* spec more intuitive and understandable. It may play no important role at this point, however. If a property
+\* check was ever added for view serializability, this, and the set of transaction snapshots, may end up being
+\* useful.
+VARIABLE dataStore
+
+\* (NOT NECESSARY)
+\* The set of snapshots needed for all running transactions. Each snapshot 
+\* represents the entire state of the data store as of a given point in time. 
+\* It is a function from transaction ids to data store snapshots. This, like the 'dataStore' variable, may 
+\* now be obsolete for a spec at this level of abstraction, since the correctness properties we check do not 
+\* depend on the actual data being read/written.
+VARIABLE txnSnapshots
 
 vars == <<clock, runningTxns, txnSnapshots, dataStore, txnHistory>>
 
@@ -83,8 +111,7 @@ AnyOpType     == UNION {BeginOpType, CommitOpType, WriteOpType, ReadOpType}
 (**************************************************************************************************)
 
 TypeInvariant == 
-    \* This seems expensive to check with TLC, so disable it for now.
-\*  /\ txnHistory   \in Seq(AnyOpType)
+\*  /\ txnHistory   \in Seq(AnyOpType) \* expensive to check with TLC (?)
     /\ dataStore    \in DataStoreType
     /\ txnSnapshots \in [txnIds -> (DataStoreType \cup {Empty})]
     /\ runningTxns  \in SUBSET [ id : txnIds, 
@@ -170,7 +197,6 @@ StartTxn == \E newTxnId \in txnIds :
 (* intersection of their timespans is non empty i.e.                                              *)
 (*                                                                                                *)
 (*     [start(T0), commit(T0)] \cap [start(T1), commit(T1)] != {}                                 *)
-(*                                                                                                *)
 (**************************************************************************************************)
 
 \* Checks whether a given transaction is allowed to commit, based on whether it conflicts
@@ -273,10 +299,10 @@ TxnReadWrite(txn) ==
 (**************************************************************************************************)
 (* The next-state relation and spec definition.                                                   *)
 (*                                                                                                *)
-(* Since it would be desirable to have TLC check for deadlock, which may indicate bugs in the     *)
-(* spec or in the algorithm, we want to explicitly define what a "valid" termination state is.    *)
-(* If all transactions have run and either committed or aborted, we consider that valid           *)
-(* termination, and is allowed as an infinite suttering step.                                     *)
+(* Since it is desirable to have TLC check for deadlock, which may indicate bugs in the spec or   *)
+(* in the algorithm, we want to explicitly define what a "valid" termination state is.  If all    *)
+(* transactions have run and either committed or aborted, we consider that valid termination, and *)
+(* is allowed as an infinite suttering step.                                                      *)
 (*                                                                                                *)
 (* Also, once a transaction knows that it cannot commit due to write conflicts, we don't let it   *)
 (* do any more reads or writes, so as to eliminate wasted operations.                             *)
@@ -338,12 +364,28 @@ IsCycle(edges) == FindAllNodesInAnyCycle(edges) /= {}
 
 
 (**************************************************************************************************)
-(* In order to check the serializability of transaction histories, we construct a multi-version   *)
-(* serialization graph (MVSG).  Details on MVSG can be found in Cahill's thesis, Section 2.5.1.   *)
-(* The important rules about how to build this graph are listed below.                            *)
 (*                                                                                                *)
-(* To construct the MSVG, we put an edge from one committed transaction T1 to another committed   *)
-(* transaction T2 in the following situations:                                                    *)
+(* Verifying Serializability                                                                      *)
+(*                                                                                                *)
+(* ---------------------------------------                                                        *)
+(*                                                                                                *)
+(* For checking serializability of transaction histories we use the "Conflict Serializability"    *)
+(* definition.  This is slightly different than what is known as "View Serializability", but is   *)
+(* suitable for verification, since it is efficient to check, whereas checking view               *)
+(* serializability of a transaction schedule is known to be an NP-complete problem.               *)
+(*                                                                                                *)
+(* The definition of conflict serializability permits a more limited set of transaction           *)
+(* histories.  Intuitively, it can be viewed as checking whether a given schedule has the         *)
+(* "potential" to produce a certain anomaly, even if the particular data values for a history     *)
+(* make it serializable.  Formally, we can think of the set of conflict serializable histories as *)
+(* a subset of all possible serializable histories.  Alternatively, we can say that               *)
+(* ConflictSerializable(h) => ViewSerializable(h).  The converse, however, is not true.  A        *)
+(* history may be serializable but not conflict serializable.                                     *)
+(*                                                                                                *)
+(* In order to check for conflict serializability, we construct a multi-version serialization     *)
+(* graph (MVSG).  Details on MVSG can be found in Cahill's thesis, Section 2.5.1.  To construct   *)
+(* the MVSG, we put an edge from one committed transaction T1 to another committed transaction T2 *)
+(* in the following situations:                                                                   *)
 (*                                                                                                *)
 (*   (WW-Dependency)                                                                              *)
 (*   T1 produces a version of x, and T2 produces a later version of x.                            *)
@@ -489,7 +531,6 @@ ReadOnlyAnomalyTest == <<
 (**************************************************************************************************)
 
 ReadOnlyAnomaly(h) == 
-    \* History is non-serializable.
     /\ ~IsSerializable(h)
     /\ \E txnId \in CommittedTxns(h) :
         \* Transaction only did reads.
@@ -501,5 +542,5 @@ ReadOnlyAnomaly(h) ==
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Feb 21 23:36:37 EST 2018 by williamschultz
+\* Last modified Thu Feb 22 23:05:43 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
