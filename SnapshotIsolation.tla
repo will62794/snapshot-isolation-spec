@@ -126,7 +126,7 @@ Init ==
     /\ dataStore = [k \in keys |-> Empty]
 
 (**************************************************************************************************)
-(* Helper functions for querying transaction histories.                                           *)
+(* Helpers for querying transaction histories.                                                    *)
 (*                                                                                                *)
 (* These are parameterized on a transaction history and a transaction id, if applicable.          *)
 (**************************************************************************************************)
@@ -163,11 +163,10 @@ IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
 (**************************************************************************************************)
 (* When a transaction starts, it gets a new, unique transaction id and is added to the set of     *)
 (* running transactions.  It also "copies" a local snapshot of the data store on which it will    *)
-(* perform its reads and writes against.  In a real system, this data would most not be literally *)
+(* perform its reads and writes against.  In a real system, this data would not be literally      *)
 (* "copied", but this is the fundamental concept of snapshot isolation i.e.  that each            *)
 (* transaction appears to operate on its own local snapshot of the database.                      *)
 (**************************************************************************************************)
-
 StartTxn == \E newTxnId \in txnIds : 
                 LET newTxn == 
                     [ id |-> newTxnId, 
@@ -230,11 +229,7 @@ CommitTxn(txn) ==
 
 (**************************************************************************************************)
 (* In this spec, a transaction aborts if and only if it cannot commit, due to write conflicts.    *)
-(* If an uncommitted transaction ends up in a state where its writes are in conflict with         *)
-(* another, committed transaction, it will either continue to do some reads/writes of other keys, *)
-(* or abort, but never commit.                                                                    *)
 (**************************************************************************************************)
-
 AbortTxn(txn) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
@@ -258,7 +253,7 @@ CompleteTxn(txn) ==
     /\ \/ CommitTxn(txn)
        \/ AbortTxn(txn)
 
-(**************************************************************************************************)
+(***************************************************************************************************)
 (* Read and write operations executed by transactions.                                            *)
 (*                                                                                                *)
 (* As a simplification, and to limit the size of potential models, we allow transactions to only  *)
@@ -305,7 +300,8 @@ TxnReadWrite(txn) ==
 (* is allowed as an infinite suttering step.                                                      *)
 (*                                                                                                *)
 (* Also, once a transaction knows that it cannot commit due to write conflicts, we don't let it   *)
-(* do any more reads or writes, so as to eliminate wasted operations.                             *)
+(* do any more reads or writes, so as to eliminate wasted operations.  That is, once we know a    *)
+(* transaction can't commit, we force its next action to be abort.                                *)
 (**************************************************************************************************)           
 
 AllTxnsFinished == AbortedTxns(txnHistory) \cup CommittedTxns(txnHistory) = txnIds
@@ -542,5 +538,5 @@ ReadOnlyAnomaly(h) ==
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Feb 22 23:05:43 EST 2018 by williamschultz
+\* Last modified Thu Feb 22 23:12:41 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
