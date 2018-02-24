@@ -368,20 +368,20 @@ IsCycle(edges) == FindAllNodesInAnyCycle(edges) /= {}
 (* For checking serializability of transaction histories we use the "Conflict Serializability"    *)
 (* definition.  This is slightly different than what is known as "View Serializability", but is   *)
 (* suitable for verification, since it is efficient to check, whereas checking view               *)
-(* serializability of a transaction schedule is known to be an NP-complete problem.               *)
+(* serializability of a transaction schedule is known to be NP-complete.                          *)
 (*                                                                                                *)
 (* The definition of conflict serializability permits a more limited set of transaction           *)
 (* histories.  Intuitively, it can be viewed as checking whether a given schedule has the         *)
 (* "potential" to produce a certain anomaly, even if the particular data values for a history     *)
 (* make it serializable.  Formally, we can think of the set of conflict serializable histories as *)
-(* a subset of all possible serializable histories.  Alternatively, we can say that               *)
-(* ConflictSerializable(h) => ViewSerializable(h).  The converse, however, is not true.  A        *)
-(* history may be serializable but not conflict serializable.                                     *)
+(* a subset of all possible serializable histories.  Alternatively, we can say that, for a given  *)
+(* history H ConflictSerializable(H) => ViewSerializable(H).  The converse, however, is not true. *)
+(* A history may be view serializable but not conflict serializable.                              *)
 (*                                                                                                *)
 (* In order to check for conflict serializability, we construct a multi-version serialization     *)
-(* graph (MVSG).  Details on MVSG can be found in Cahill's thesis, Section 2.5.1.  To construct   *)
-(* the MVSG, we put an edge from one committed transaction T1 to another committed transaction T2 *)
-(* in the following situations:                                                                   *)
+(* graph (MVSG).  Details on MVSG can be found, among other places, in Cahill's thesis, Section   *)
+(* 2.5.1.  To construct the MVSG, we put an edge from one committed transaction T1 to another     *)
+(* committed transaction T2 in the following situations:                                          *)
 (*                                                                                                *)
 (*   (WW-Dependency)                                                                              *)
 (*   T1 produces a version of x, and T2 produces a later version of x.                            *)
@@ -581,5 +581,5 @@ IsViewSerializable(h) == \E h2 \in SerialHistories(h) : ViewEquivalent(h, Execut
 
 =============================================================================
 \* Modification History
-\* Last modified Sat Feb 24 00:22:55 EST 2018 by williamschultz
+\* Last modified Sat Feb 24 00:27:15 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
