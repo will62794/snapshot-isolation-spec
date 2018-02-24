@@ -67,3 +67,43 @@ The depth of the complete state graph search is 13.
 The average outdegree of the complete state graph is 8 (minimum is 0, the maximum 17 and the 95th percentile is 12).
 Finished in 01h 04min at (2018-02-21 23:41:43)
 ```
+
+Interestingly, running TLC in simulation mode (using the `-simulate` flag) produces a violating trace in just under 3 minutes, on the same hardware. This speedup may be due to the fact that, to produce this particular anomaly, a sufficiently long trace is required. Searching the state space in a breadth first manner (TLC's default) would require the checking of all possible "short" traces before testing out any longer ones.
+
+```
+  % java tlc2.TLC -simulate -cleanup -gzip -workers 12 -metadir /hdd/tlc_states -config MC.cfg MC.tla                                                                      !10179
+TLC2 Version 2.12 of 29 January 2018
+Running Random Simulation with seed 6802238540282724400 with 12 workers on 12 cores with 7143MB heap and 64MB offheap memory (Linux 4.8.0-59-generic amd64, Oracle Corporation 1.8
+.0_131 x86_64).
+
+...
+
+
+State 13:
+/\ txnSnapshots = ( t0 :> (k1 :> Empty @@ k2 :> v2) @@
+  t1 :> (k1 :> v2 @@ k2 :> Empty) @@
+  t2 :> (k1 :> v2 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v2 @@ k2 :> v2)
+/\ txnHistory = << [type |-> "begin", txnId |-> t0, time |-> 1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "read", txnId |-> t0, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k1, val |-> v2],
+   [type |-> "commit", txnId |-> t1, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "begin", txnId |-> t2, time |-> 4],
+   [type |-> "read", txnId |-> t0, key |-> k2, val |-> Empty],
+   [type |-> "read", txnId |-> t2, key |-> k1, val |-> v2],
+   [type |-> "read", txnId |-> t2, key |-> k2, val |-> Empty],
+   [type |-> "write", txnId |-> t0, key |-> k2, val |-> v2],
+   [type |-> "commit", txnId |-> t2, time |-> 5, updatedKeys |-> {}],
+   [type |-> "commit", txnId |-> t0, time |-> 6, updatedKeys |-> {k2}] >>
+/\ clock = 6
+/\ runningTxns = {}
+
+The number of states generated: 3489180
+Simulation using seed 6802238540282724400 and aril 4642022
+Progress: 3489180 states checked.
+Finished in 02min 42s at (2018-02-24 11:38:10)
+```
+
+
+
