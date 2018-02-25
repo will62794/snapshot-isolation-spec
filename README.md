@@ -68,7 +68,7 @@ The average outdegree of the complete state graph is 8 (minimum is 0, the maximu
 Finished in 01h 04min at (2018-02-21 23:41:43)
 ```
 
-Interestingly, running TLC in simulation mode (using the `-simulate` flag) produces a violating trace in just under 3 minutes, on the same hardware. This speedup may be due to the fact that, to produce this particular anomaly, a sufficiently long trace is required. Searching the state space in a breadth first manner (TLC's default) would require the checking of all possible "short" traces before testing out any longer ones.
+Interestingly, running TLC in simulation mode (using the `-simulate` flag) produces a violating trace in just under 3 minutes, on the same hardware. This speedup may be due to the fact that, to produce this particular anomaly, a sufficiently long trace is required. Searching the state space in a breadth first manner (TLC's default) would require the checking of all possible "short" traces before testing out any longer ones. In fact, running TLC simulation in parallel, with 12 cores, often produced a violating trace in under a minute. It seems that simulation mode may be better at finding "interesting" traces more quickly than standard model checking model, at least for this particular model.
 
 ```
   % java tlc2.TLC -simulate -cleanup -gzip -workers 12 -metadir /hdd/tlc_states -config MC.cfg MC.tla                                                                      !10179
