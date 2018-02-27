@@ -515,7 +515,7 @@ ReadOnlyAnomalyTest == <<
     (* R3(Y1,20)  *) [type |-> "read",   txnId |-> 3, key |-> "K_Y", ver |-> "T_1"], 
     (* C3         *) [type |-> "commit", txnId |-> 3, time |-> 6, updatedKeys |-> {}],
                       
-    (* W2(X2,-11) *) [type |-> "write",  txnId |-> 2, key |-> "K_X", val |-> 11], 
+    (* W2(X2,-11) *) [type |-> "write",  txnId |-> 2, key |-> "K_X", val |-> (0 - 11)], 
     (* C2         *) [type |-> "commit", txnId |-> 2, time |-> 7, updatedKeys |-> {"K_X"}]
     >>
 
@@ -572,13 +572,11 @@ ExecuteSerialHistory(h) ==
     [i \in DOMAIN h |-> 
         IF h[i].type = "read" 
             \* We need to determine what value to read for this operation; we use the
-            \* the value of the last write to this key that committed before this transaction
-            \* began.
+            \* the value of the last write to this key.
             THEN LET prevWriteOpInds == {ind \in DOMAIN h : 
                                                 /\  ind < i 
                                                 /\  h[ind].type = "write"
-                                                /\  h[ind].key = h[i].key
-                                                /\  h[ind].txnId \in CommittedTxns(SubSeq(h, 1, i))} IN
+                                                /\  h[ind].key = h[i].key} IN
                      IF prevWriteOpInds = {} 
                         THEN [h[i] EXCEPT !.val = Empty]
                         ELSE LET latestWriteOpToKey == h[Maximum(prevWriteOpInds)] IN
@@ -596,5 +594,5 @@ IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, Exec
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Feb 26 20:02:28 EST 2018 by williamschultz
+\* Last modified Mon Feb 26 21:36:59 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
