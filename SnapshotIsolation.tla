@@ -111,7 +111,7 @@ AnyOpType     == UNION {BeginOpType, CommitOpType, WriteOpType, ReadOpType}
 (**************************************************************************************************)
 
 TypeInvariant == 
-\*  /\ txnHistory   \in Seq(AnyOpType) \* expensive to check with TLC (?)
+    \* /\ txnHistory \in Seq(AnyOpType) seems expensive to check with TLC, so disable it.
     /\ dataStore    \in DataStoreType
     /\ txnSnapshots \in [txnIds -> (DataStoreType \cup {Empty})]
     /\ runningTxns  \in SUBSET [ id : txnIds, 
@@ -429,7 +429,7 @@ SerializationGraph(history) ==
            \/ RWDependency(history, t1, t2)}
 
 \* The key property to verify i.e. serializability of transaction histories.
-IsSerializable(h) == ~IsCycle(SerializationGraph(h))
+IsConflictSerializable(h) == ~IsCycle(SerializationGraph(h))
 
 \* Examples of each dependency type.
 HistWW == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
@@ -526,14 +526,14 @@ ReadOnlyAnomalyTest == <<
 (**************************************************************************************************)
 
 ReadOnlyAnomaly(h) == 
-    /\ ~IsSerializable(h)
+    /\ ~IsConflictSerializable(h)
     /\ \E txnId \in CommittedTxns(h) :
         \* Transaction only did reads.
         /\ WritesByTxn(h, txnId) = {}
         \* Removing the transaction makes the history serializable
         /\ LET txnOpsFilter(t) == (t.txnId # txnId)
            hWithoutTxn == SelectSeq(h, txnOpsFilter) IN
-           IsSerializable(hWithoutTxn)
+           IsConflictSerializable(hWithoutTxn)
 
 
 ---------------------------------------------------------------------------------------------------
@@ -544,6 +544,11 @@ ReadOnlyAnomaly(h) ==
 
 (**************************************************************************************************)
 (* View Serializability (Experimental).                                                           *)
+(*                                                                                                *)
+(* A transaction history is view serializable if the reads and writes of all transaction          *)
+(* oeprations are equivalent the reads and writes of some serial schedule.  View serializability  *)
+(* encodes a more intuitive notion of serializability i.e.  the overall effect of a sequence of   *)
+(* interleaved transactions is the same as if it they were executed in sequential order.          *)
 (**************************************************************************************************)
 
 Maximum(S) == CHOOSE x \in S : \A y \in S : y <= x
@@ -560,26 +565,36 @@ SerialHistories(h) ==
     LET serialOrderings == SeqPermutations({ OpsForTxn(h, tid) : tid \in CommittedTxns(h) }) IN
     {Flatten(o) : o \in serialOrderings}
 
+\* We "execute" a given serial history. To do this, we really only need to determine what the new values of the 
+\* 'read' operations are, since writes are not changed. To do this, we simply replace the value of each read operation
+\* in the history with the appropriate one.
 ExecuteSerialHistory(h) ==
     [i \in DOMAIN h |-> 
         IF h[i].type = "read" 
+            \* We need to determine what value to read for this operation; we use the
+            \* the value of the last write to this key that committed before this transaction
+            \* began.
             THEN LET prevWriteOpInds == {ind \in DOMAIN h : 
                                                 /\  ind < i 
                                                 /\  h[ind].type = "write"
-                                                /\  h[ind].key = h[i].key} IN
+                                                /\  h[ind].key = h[i].key
+                                                /\  h[ind].txnId \in CommittedTxns(SubSeq(h, 1, i))} IN
                      IF prevWriteOpInds = {} 
                         THEN [h[i] EXCEPT !.val = Empty]
                         ELSE LET latestWriteOpToKey == h[Maximum(prevWriteOpInds)] IN
                              [h[i] EXCEPT !.val = latestWriteOpToKey.val] 
             ELSE h[i]]
 
-ViewEquivalent(h1, h2) == 
+IsViewEquivalent(h1, h2) == 
     \A tid \in CommittedTxns(h1) : OpsForTxn(h1, tid) = OpsForTxn(h2, tid)
 
-IsViewSerializable(h) == \E h2 \in SerialHistories(h) : ViewEquivalent(h, ExecuteSerialHistory(h2))
+ViewEquivalentHistory(h) == LET serialH == CHOOSE h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2)) IN
+                                           ExecuteSerialHistory(serialH)
+
+IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))
 
 
 =============================================================================
 \* Modification History
-\* Last modified Sat Feb 24 00:27:15 EST 2018 by williamschultz
+\* Last modified Mon Feb 26 19:48:49 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
