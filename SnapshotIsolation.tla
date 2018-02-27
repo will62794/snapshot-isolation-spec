@@ -115,8 +115,8 @@ TypeInvariant ==
     /\ dataStore    \in DataStoreType
     /\ txnSnapshots \in [txnIds -> (DataStoreType \cup {Empty})]
     /\ runningTxns  \in SUBSET [ id : txnIds, 
-                                startTime  : Nat, 
-                                commitTime : Nat \cup {Empty}]
+                                 startTime  : Nat, 
+                                 commitTime : Nat \cup {Empty}]
 
 Init ==  
     /\ runningTxns = {} 
@@ -410,13 +410,15 @@ WRDependency(h, t1Id, t2Id) ==
         /\ op1.key = op2.key
         /\ CommitOp(h, t1Id).time < BeginOp(h, t2Id).time   
 
-\* T1 read a key that T2 then later wrote to.
+\* T1 read a key that T2 then later wrote to. T1 must start before T2 commits, since this implies that T1 read  
+\* a version of the key and T2 produced a later version of that ke, i.e. when it commits. T1, however, read 
+\* an earlier version of that key, because it started before T2 committed.
 RWDependency(h, t1Id, t2Id) == 
     \E op1 \in ReadsByTxn(h, t1Id) :
     \E op2 \in WritesByTxn(h, t2Id) :
         /\ op1.key = op2.key
-        /\ IndexOfOp(h, op2) > IndexOfOp(h, op1)           \* T2's write occurred after T1's read.
-        /\ BeginOp(h, t1Id).time < CommitOp(h, t2Id).time  \* T1 starts before T2 commits.
+        /\ BeginOp(h, t1Id).time < CommitOp(h, t2Id).time  \* T1 starts before T2 commits. This means that T1 read
+        
 
 \* Produces the serialization graph as defined above, for a given history. This graph is produced 
 \* by defining the appropriate set comprehension, where the produced set contains all the edges of the graph.
@@ -437,7 +439,7 @@ HistWW == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
              [type |-> "commit" , txnId |-> 0 , time |-> 1, updatedKeys |-> {"k1"}],
              [type |-> "begin"  , txnId |-> 1 , time |-> 2],
              [type |-> "write"  , txnId |-> 1 , key  |-> "k1" , val |-> "v1"],
-             [type |-> "commit" , txnId |-> 1 , time |-> 2, updatedKeys |-> {"k1"}]>>
+             [type |-> "commit" , txnId |-> 1 , time |-> 3, updatedKeys |-> {"k1"}]>>
 
 HistWR == << [type |-> "begin"  , txnId |-> 0 , time |-> 0],
              [type |-> "write"  , txnId |-> 0 , key  |-> "k1" , val |-> "v1"],
@@ -560,6 +562,8 @@ SeqPermutations(S) == LET D == 1..Cardinality(S) IN {f \in [D -> S] : \A w \in S
 RECURSIVE Flatten(_)
 Flatten(seq) == IF Len(seq) = 0 THEN <<>> ELSE Head(seq) \o Flatten(Tail(seq))
 
+\* The subsequence of all operations executed by a given transaction id in a history. The original ordering 
+\* of the operations is maintained.
 OpsForTxn(h, txnId) == SelectSeq(h, LAMBDA t : t.txnId = txnId)
 SerialHistories(h) == 
     LET serialOrderings == SeqPermutations({ OpsForTxn(h, tid) : tid \in CommittedTxns(h) }) IN
@@ -594,5 +598,5 @@ IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, Exec
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Feb 26 21:36:59 EST 2018 by williamschultz
+\* Last modified Tue Feb 27 12:56:09 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
