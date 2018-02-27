@@ -588,13 +588,13 @@ ExecuteSerialHistory(h) ==
 IsViewEquivalent(h1, h2) == 
     \A tid \in CommittedTxns(h1) : OpsForTxn(h1, tid) = OpsForTxn(h2, tid)
 
-ViewEquivalentHistory(h) == LET serialH == CHOOSE h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2)) IN
-                                           ExecuteSerialHistory(serialH)
+ViewEquivalentHistory(h) == {ExecuteSerialHistory(serial) : serial \in 
+                                {h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))}}
 
 IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))
 
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Feb 26 19:48:49 EST 2018 by williamschultz
+\* Last modified Mon Feb 26 20:02:28 EST 2018 by williamschultz
 \* Created Sat Jan 13 08:59:10 EST 2018 by williamschultz
