@@ -537,6 +537,15 @@ ReadOnlyAnomaly(h) ==
            hWithoutTxn == SelectSeq(h, txnOpsFilter) IN
            IsConflictSerializable(hWithoutTxn)
 
+\* Invariant definitions.
+IsConflictSerializableInv == IsConflictSerializable(txnHistory)
+NoReadOnlyAnomaly == ~ReadOnlyAnomaly(txnHistory)
+
+(**************************************************************************************************)
+(* Checks if a given history contains a "write skew" anomaly.  In other words, is this a          *)
+(* non-serializable transaction history such that it contains two transactions T1, T2, where T1   *)
+(* writes to a key that T2 also writes to, and T1 commits before T2 starts.                      *)
+(**************************************************************************************************)
 
 ---------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------
@@ -595,6 +604,11 @@ ViewEquivalentHistory(h) == {ExecuteSerialHistory(serial) : serial \in
 
 IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))
 
+-------------------------------------------------
+
+\* Some model checking details.
+
+Symmetry == Permutations(keys) \cup Permutations(values) \cup Permutations(txnIds)
 
 =============================================================================
 \* Modification History
