@@ -306,11 +306,11 @@ TxnReadWrite(txn) ==
 
 AllTxnsFinished == AbortedTxns(txnHistory) \cup CommittedTxns(txnHistory) = txnIds
     
-Next == \/ StartTxn 
-        \/ \E txn \in runningTxns : 
-                \/ CompleteTxn(txn)
-                \/ TxnReadWrite(txn) /\ TxnCanCommit(txn)
-        \/ (AllTxnsFinished /\ UNCHANGED vars)
+Next == 
+    \/ StartTxn
+    \/ \E txn \in runningTxns : CompleteTxn(txn)
+    \/ \E txn \in runningTxns : TxnReadWrite(txn) /\ TxnCanCommit(txn)
+    \/ (AllTxnsFinished /\ UNCHANGED vars)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
