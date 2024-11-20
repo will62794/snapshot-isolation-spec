@@ -262,28 +262,29 @@ AbortTxn(txnId) ==
 
 TxnRead(txnId, k) == 
     \* Read from this transaction's snapshot.
-    LET valRead == txnSnapshots[txnId][k]
+    /\ \E t \in runningTxns : t.id = txnId
+    /\ LET valRead == txnSnapshots[txnId][k]
         readOp == [ type  |-> "read", 
                     txnId |-> txnId, 
                     key   |-> k, 
                     val   |-> valRead] IN
-    /\ \E t \in runningTxns : t.id = txnId
-    /\ k \notin KeysReadByTxn(txnHistory, txnId)   
-    /\ txnHistory' = Append(txnHistory, readOp)
-    /\ UNCHANGED <<dataStore, clock, runningTxns, txnSnapshots>>
+        /\ \E t \in runningTxns : t.id = txnId
+        /\ k \notin KeysReadByTxn(txnHistory, txnId)   
+        /\ txnHistory' = Append(txnHistory, readOp)
+        /\ UNCHANGED <<dataStore, clock, runningTxns, txnSnapshots>>
                    
 TxnUpdate(txnId, k, v) == 
-    LET writeOp == [ type  |-> "write", 
-                     txnId |-> txnId, 
-                     key   |-> k, 
-                     val   |-> v] IN  
     /\ \E t \in runningTxns : t.id = txnId
-    /\ k \notin KeysWrittenByTxn(txnHistory, txnId)
-    \* We update the transaction's snapshot, not the actual data store.
-    /\ LET updatedSnapshot == [txnSnapshots[txnId] EXCEPT ![k] = v] IN
-           txnSnapshots' = [txnSnapshots EXCEPT ![txnId] = updatedSnapshot]
-    /\ txnHistory' = Append(txnHistory, writeOp)
-    /\ UNCHANGED <<dataStore, runningTxns, clock>>
+    /\ LET writeOp == [ type  |-> "write", 
+                        txnId |-> txnId, 
+                        key   |-> k, 
+                        val   |-> v] IN  
+        /\ k \notin KeysWrittenByTxn(txnHistory, txnId)
+        \* We update the transaction's snapshot, not the actual data store.
+        /\ LET updatedSnapshot == [txnSnapshots[txnId] EXCEPT ![k] = v] IN
+            txnSnapshots' = [txnSnapshots EXCEPT ![txnId] = updatedSnapshot]
+        /\ txnHistory' = Append(txnHistory, writeOp)
+        /\ UNCHANGED <<dataStore, runningTxns, clock>>
 
 (**************************************************************************************************)
 (* The next-state relation and spec definition.                                                   *)
