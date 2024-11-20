@@ -167,26 +167,27 @@ IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
 (* "copied", but this is the fundamental concept of snapshot isolation i.e.  that each            *)
 (* transaction appears to operate on its own local snapshot of the database.                      *)
 (**************************************************************************************************)
-StartTxn == \E newTxnId \in txnIds : 
-                LET newTxn == 
-                    [ id |-> newTxnId, 
-                      startTime |-> clock+1, 
-                      commitTime |-> Empty] IN
-                \* Must choose an unused transaction id. There must be no other operation
-                \* in the history that already uses this id.
-                /\ ~\E op \in Range(txnHistory) : op.txnId = newTxnId
-                \* Save a snapshot of current data store for this transaction, and
-                \* and append its 'begin' event to the history.
-                /\ txnSnapshots' = [txnSnapshots EXCEPT ![newTxnId] = dataStore]
-                /\ LET beginOp == [ type  |-> "begin", 
-                                    txnId |-> newTxnId, 
-                                    time  |-> clock+1 ] IN
-                   txnHistory' = Append(txnHistory, beginOp)
-                \* Add transaction to the set of active transactions.
-                /\ runningTxns' = runningTxns \cup {newTxn}
-                \* Tick the clock.
-                /\ clock' = clock + 1    
-                /\ UNCHANGED <<dataStore>>
+StartTxn(newTxnId) == 
+    \* \E newTxnId \in txnIds : 
+    LET newTxn == 
+        [ id |-> newTxnId, 
+            startTime |-> clock+1, 
+            commitTime |-> Empty] IN
+    \* Must choose an unused transaction id. There must be no other operation
+    \* in the history that already uses this id.
+    /\ ~\E op \in Range(txnHistory) : op.txnId = newTxnId
+    \* Save a snapshot of current data store for this transaction, and
+    \* and append its 'begin' event to the history.
+    /\ txnSnapshots' = [txnSnapshots EXCEPT ![newTxnId] = dataStore]
+    /\ LET beginOp == [ type  |-> "begin", 
+                        txnId |-> newTxnId, 
+                        time  |-> clock+1 ] IN
+        txnHistory' = Append(txnHistory, beginOp)
+    \* Add transaction to the set of active transactions.
+    /\ runningTxns' = runningTxns \cup {newTxn}
+    \* Tick the clock.
+    /\ clock' = clock + 1    
+    /\ UNCHANGED <<dataStore>>
                           
                         
 (**************************************************************************************************)
@@ -200,29 +201,34 @@ StartTxn == \E newTxnId \in txnIds :
 
 \* Checks whether a given transaction is allowed to commit, based on whether it conflicts
 \* with other concurrent transactions that have already committed.
-TxnCanCommit(txn) == 
+TxnCanCommit(txnId) == 
     ~\E op \in Range(txnHistory) :
+    ~\E txn \in runningTxns :
+        /\ txn.id = txnId
         /\ op.type = "commit" 
         /\ op.time > txn.startTime 
-        /\ KeysWrittenByTxn(txnHistory, txn.id) \cap op.updatedKeys /= {} \* Must be no conflicting keys.
+        /\ KeysWrittenByTxn(txnHistory, txnId) \cap op.updatedKeys /= {} \* Must be no conflicting keys.
          
-CommitTxn(txn) == 
+CommitTxn(txnId) == 
     \* Transaction must be able to commit i.e. have no write conflicts with concurrent.
     \* committed transactions.
-    /\ TxnCanCommit(txn)  
+    /\ \E t \in runningTxns : t.id = txnId
+    \* Must not be a no-op transaction.
+    /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}
+    /\ TxnCanCommit(txnId)  
     /\ LET commitOp == [ type          |-> "commit", 
-                         txnId         |-> txn.id, 
+                         txnId         |-> txnId, 
                          time          |-> clock + 1,
-                         updatedKeys   |-> KeysWrittenByTxn(txnHistory, txn.id)] IN
+                         updatedKeys   |-> KeysWrittenByTxn(txnHistory, txnId)] IN
        txnHistory' = Append(txnHistory, commitOp)            
     \* Merge this transaction's updates into the data store. If the 
     \* transaction has updated a key, then we use its version as the new
     \* value for that key. Otherwise the key remains unchanged.
-    /\ dataStore' = [k \in keys |-> IF k \in KeysWrittenByTxn(txnHistory, txn.id) 
-                                        THEN txnSnapshots[txn.id][k]
+    /\ dataStore' = [k \in keys |-> IF k \in KeysWrittenByTxn(txnHistory, txnId) 
+                                        THEN txnSnapshots[txnId][k]
                                         ELSE dataStore[k]]
     \* Remove the transaction from the active set. 
-    /\ runningTxns' = runningTxns \ {txn}
+    /\ runningTxns' = {r \in runningTxns : r.id # txnId}
     /\ clock' = clock + 1
     \* We can leave the snapshot around, since it won't be used again.
     /\ UNCHANGED <<txnSnapshots>>
@@ -230,28 +236,21 @@ CommitTxn(txn) ==
 (**************************************************************************************************)
 (* In this spec, a transaction aborts if and only if it cannot commit, due to write conflicts.    *)
 (**************************************************************************************************)
-AbortTxn(txn) ==
+AbortTxn(txnId) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
-    /\ ~TxnCanCommit(txn)
+    /\ \E t \in runningTxns : t.id = txnId
+    \* Must not be a no-op transaction.
+    /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}
+    /\ ~TxnCanCommit(txnId)
     /\ LET abortOp == [ type   |-> "abort", 
-                        txnId  |-> txn.id, 
+                        txnId  |-> txnId, 
                         time   |-> clock + 1] IN    
        txnHistory' = Append(txnHistory, abortOp)
-    /\ runningTxns' = runningTxns \ {txn} \* transaction is no longer running.
+    /\ runningTxns' = {r \in runningTxns : r.id # txnId} \* transaction is no longer running.
     /\ clock' = clock + 1
     \* No changes are made to the data store.
     /\ UNCHANGED <<dataStore, txnSnapshots>>
-
-\* Ends a given transaction by either committing or aborting it. To exclude uninteresting 
-\* histories, we require that a transaction does at least one operation before committing or aborting. 
-\* Assumes that the given transaction is currently running.
-CompleteTxn(txn) == 
-    \* Must not be a no-op transaction.
-    /\ (WritesByTxn(txnHistory, txn.id) \cup ReadsByTxn(txnHistory, txn.id)) /= {}
-    \* Commit or abort the transaction.
-    /\ \/ CommitTxn(txn)
-       \/ AbortTxn(txn)
 
 (***************************************************************************************************)
 (* Read and write operations executed by transactions.                                            *)
@@ -261,36 +260,31 @@ CompleteTxn(txn) ==
 (* of generality.                                                                                 *)
 (**************************************************************************************************)
 
-TxnRead(txn, k) == 
+TxnRead(txnId, k) == 
     \* Read from this transaction's snapshot.
-    LET valRead == txnSnapshots[txn.id][k]
+    LET valRead == txnSnapshots[txnId][k]
         readOp == [ type  |-> "read", 
-                    txnId |-> txn.id, 
+                    txnId |-> txnId, 
                     key   |-> k, 
                     val   |-> valRead] IN
+    /\ \E t \in runningTxns : t.id = txnId
+    /\ k \notin KeysReadByTxn(txnHistory, txnId)   
     /\ txnHistory' = Append(txnHistory, readOp)
     /\ UNCHANGED <<dataStore, clock, runningTxns, txnSnapshots>>
                    
-TxnUpdate(txn, k, v) == 
+TxnUpdate(txnId, k, v) == 
     LET writeOp == [ type  |-> "write", 
-                     txnId |-> txn.id, 
+                     txnId |-> txnId, 
                      key   |-> k, 
-                     val   |-> v] IN    
+                     val   |-> v] IN  
+    /\ \E t \in runningTxns : t.id = txnId
+    /\ k \notin KeysWrittenByTxn(txnHistory, txnId)
     \* We update the transaction's snapshot, not the actual data store.
-    /\ LET updatedSnapshot == [txnSnapshots[txn.id] EXCEPT ![k] = v] IN
-           txnSnapshots' = [txnSnapshots EXCEPT ![txn.id] = updatedSnapshot]
+    /\ LET updatedSnapshot == [txnSnapshots[txnId] EXCEPT ![k] = v] IN
+           txnSnapshots' = [txnSnapshots EXCEPT ![txnId] = updatedSnapshot]
     /\ txnHistory' = Append(txnHistory, writeOp)
     /\ UNCHANGED <<dataStore, runningTxns, clock>>
 
-\* A read or write action by a running transaction. We limit transactions
-\* to only read or write the same key once.
-TxnReadWrite(txn) == 
-       \E k \in keys : 
-       \E v \in values :
-            \/ TxnRead(txn, k) /\ k \notin KeysReadByTxn(txnHistory, txn.id)
-            \/ TxnUpdate(txn, k, v) /\ k \notin KeysWrittenByTxn(txnHistory, txn.id)
-            
-            
 (**************************************************************************************************)
 (* The next-state relation and spec definition.                                                   *)
 (*                                                                                                *)
@@ -307,9 +301,16 @@ TxnReadWrite(txn) ==
 AllTxnsFinished == AbortedTxns(txnHistory) \cup CommittedTxns(txnHistory) = txnIds
     
 Next == 
-    \/ StartTxn
-    \/ \E txn \in runningTxns : CompleteTxn(txn)
-    \/ \E txn \in runningTxns : TxnReadWrite(txn) /\ TxnCanCommit(txn)
+    \/ \E txnId \in txnIds : StartTxn(txnId)
+    \* Ends a given transaction by either committing or aborting it. To exclude uninteresting 
+    \* histories, we require that a transaction does at least one operation before committing or aborting. 
+    \* Assumes that the given transaction is currently running.
+    \/ \E txnId \in txnIds : CommitTxn(txnId)
+    \/ \E txnId \in txnIds : AbortTxn(txnId)
+    \* Transaction reads or writes a key. We limit transactions
+    \* to only read or write the same key once.
+    \/ \E txnId \in txnIds, k \in keys : TxnRead(txnId, k)
+    \/ \E txnId \in txnIds, k \in keys, v \in values : TxnUpdate(txnId, k, v)
     \/ (AllTxnsFinished /\ UNCHANGED vars)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
