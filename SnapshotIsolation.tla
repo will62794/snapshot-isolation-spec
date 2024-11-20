@@ -302,16 +302,16 @@ TxnUpdate(txnId, k, v) ==
 AllTxnsFinished == AbortedTxns(txnHistory) \cup CommittedTxns(txnHistory) = txnIds
     
 Next == 
-    \/ \E txnId \in txnIds : StartTxn(txnId)
+    \/ \E tid \in txnIds : StartTxn(tid)
     \* Ends a given transaction by either committing or aborting it. To exclude uninteresting 
     \* histories, we require that a transaction does at least one operation before committing or aborting. 
     \* Assumes that the given transaction is currently running.
-    \/ \E txnId \in txnIds : CommitTxn(txnId)
-    \/ \E txnId \in txnIds : AbortTxn(txnId)
+    \/ \E tid \in txnIds : CommitTxn(tid)
+    \/ \E tid \in txnIds : AbortTxn(tid)
     \* Transaction reads or writes a key. We limit transactions
     \* to only read or write the same key once.
-    \/ \E txnId \in txnIds, k \in keys : TxnRead(txnId, k)
-    \/ \E txnId \in txnIds, k \in keys, v \in values : TxnUpdate(txnId, k, v)
+    \/ \E tid \in txnIds, k \in keys : TxnRead(tid, k)
+    \/ \E tid \in txnIds, k \in keys, v \in values : TxnUpdate(tid, k, v)
     \/ (AllTxnsFinished /\ UNCHANGED vars)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
