@@ -153,6 +153,8 @@ KeysWrittenByTxn(h, txnId) == { op.key : op \in WritesByTxn(txnHistory, txnId)}
 \* The index of a given operation in the transaction history sequence.
 IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
 
+RunningTxnIds == {txn.id : txn \in runningTxns}
+
 (**************************************************************************************************)
 (*                                                                                                *)
 (* Action Definitions                                                                             *)
@@ -168,7 +170,6 @@ IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
 (* transaction appears to operate on its own local snapshot of the database.                      *)
 (**************************************************************************************************)
 StartTxn(newTxnId) == 
-    \* \E newTxnId \in txnIds : 
     LET newTxn == 
         [ id |-> newTxnId, 
             startTime |-> clock+1, 
@@ -213,7 +214,7 @@ TxnCanCommit(txnId) ==
 CommitTxn(txnId) == 
     \* Transaction must be able to commit i.e. have no write conflicts with concurrent.
     \* committed transactions.
-    /\ \E t \in runningTxns : t.id = txnId
+    /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
     /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}
     /\ TxnCanCommit(txnId)  
@@ -240,7 +241,7 @@ CommitTxn(txnId) ==
 AbortTxn(txnId) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
-    /\ \E t \in runningTxns : t.id = txnId
+    /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
     /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}
     /\ ~TxnCanCommit(txnId)
@@ -263,19 +264,18 @@ AbortTxn(txnId) ==
 
 TxnRead(txnId, k) == 
     \* Read from this transaction's snapshot.
-    /\ \E t \in runningTxns : t.id = txnId
+    /\ txnId \in RunningTxnIds
     /\ LET valRead == txnSnapshots[txnId][k]
         readOp == [ type  |-> "read", 
                     txnId |-> txnId, 
                     key   |-> k, 
                     val   |-> valRead] IN
-        /\ \E t \in runningTxns : t.id = txnId
         /\ k \notin KeysReadByTxn(txnHistory, txnId)   
         /\ txnHistory' = Append(txnHistory, readOp)
         /\ UNCHANGED <<dataStore, clock, runningTxns, txnSnapshots>>
                    
 TxnUpdate(txnId, k, v) == 
-    /\ \E t \in runningTxns : t.id = txnId
+    /\ txnId \in RunningTxnIds
     /\ LET writeOp == [ type  |-> "write", 
                         txnId |-> txnId, 
                         key   |-> k, 
