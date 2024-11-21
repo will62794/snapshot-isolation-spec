@@ -201,13 +201,14 @@ StartTxn(newTxnId) ==
 
 \* Checks whether a given transaction is allowed to commit, based on whether it conflicts
 \* with other concurrent transactions that have already committed.
-TxnCanCommit(txnId) == 
-    ~\E op \in Range(txnHistory) :
-    ~\E txn \in runningTxns :
+TxnCanCommit(txnId) ==
+    \E txn \in runningTxns : 
         /\ txn.id = txnId
-        /\ op.type = "commit" 
-        /\ op.time > txn.startTime 
-        /\ KeysWrittenByTxn(txnHistory, txnId) \cap op.updatedKeys /= {} \* Must be no conflicting keys.
+        /\ ~\E op \in Range(txnHistory) :
+            /\ op.type = "commit" 
+            \* Did another transaction start after me.
+            /\ txn.id = txnId /\ op.time > txn.startTime 
+            /\ KeysWrittenByTxn(txnHistory, txnId) \cap op.updatedKeys /= {} \* Must be no conflicting keys.
          
 CommitTxn(txnId) == 
     \* Transaction must be able to commit i.e. have no write conflicts with concurrent.
