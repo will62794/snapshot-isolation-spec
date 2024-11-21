@@ -1,0 +1,181 @@
+TLC2 Version 2.18 of Day Month 20?? (rev: 4b513ad)
+Running Random Simulation with seed 6716861192212514348 with 8 workers on 8 cores with 3641MB heap and 64MB offheap memory [pid: 58400] (Mac OS X 14.3 aarch64, Oracle Corporation 22.0.1 x86_64).
+Parsing file /Users/willyschultz/Dropbox/Projects/TLA+/Specs/SnapshotIsolation/SnapshotIsolation.tla
+Parsing file /private/var/folders/52/bz5jx0_s56bbsnb0vxt468v00000gn/T/tlc-14601478954400213710/Naturals.tla (jar:file:/usr/local/tla2tools-v1.8.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /private/var/folders/52/bz5jx0_s56bbsnb0vxt468v00000gn/T/tlc-14601478954400213710/FiniteSets.tla (jar:file:/usr/local/tla2tools-v1.8.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /private/var/folders/52/bz5jx0_s56bbsnb0vxt468v00000gn/T/tlc-14601478954400213710/Sequences.tla (jar:file:/usr/local/tla2tools-v1.8.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /private/var/folders/52/bz5jx0_s56bbsnb0vxt468v00000gn/T/tlc-14601478954400213710/TLC.tla (jar:file:/usr/local/tla2tools-v1.8.jar!/tla2sany/StandardModules/TLC.tla)
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module SnapshotIsolation
+Starting... (2024-11-20 20:28:27)
+Computed 1 initial states...
+Error: Invariant NoReadOnlyAnomaly is violated.
+Error: The behavior up to this point is:
+State 1: <Init line 122, col 5 to line 126, col 41 of module SnapshotIsolation>
+/\ txnSnapshots = (t0 :> Empty @@ t1 :> Empty @@ t2 :> Empty)
+/\ dataStore = (k1 :> Empty @@ k2 :> Empty)
+/\ txnHistory = <<>>
+/\ clock = 0
+/\ runningTxns = {}
+
+State 2: <StartTxn(t2) line 179, col 5 to line 191, col 30 of module SnapshotIsolation>
+/\ txnSnapshots = (t0 :> Empty @@ t1 :> Empty @@ t2 :> (k1 :> Empty @@ k2 :> Empty))
+/\ dataStore = (k1 :> Empty @@ k2 :> Empty)
+/\ txnHistory = <<[type |-> "begin", txnId |-> t2, time |-> 1]>>
+/\ clock = 1
+/\ runningTxns = {[id |-> t2, startTime |-> 1, commitTime |-> Empty]}
+
+State 3: <TxnUpdate(t2,k1,v1) line 278, col 5 to line 288, col 54 of module SnapshotIsolation>
+/\ txnSnapshots = (t0 :> Empty @@ t1 :> Empty @@ t2 :> (k1 :> v1 @@ k2 :> Empty))
+/\ dataStore = (k1 :> Empty @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1] >>
+/\ clock = 1
+/\ runningTxns = {[id |-> t2, startTime |-> 1, commitTime |-> Empty]}
+
+State 4: <StartTxn(t1) line 179, col 5 to line 191, col 30 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> Empty @@
+  t1 :> (k1 :> Empty @@ k2 :> Empty) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> Empty @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2] >>
+/\ clock = 2
+/\ runningTxns = { [id |-> t1, startTime |-> 2, commitTime |-> Empty],
+  [id |-> t2, startTime |-> 1, commitTime |-> Empty] }
+
+State 5: <CommitTxn(t2) line 217, col 5 to line 236, col 33 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> Empty @@
+  t1 :> (k1 :> Empty @@ k2 :> Empty) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}] >>
+/\ clock = 3
+/\ runningTxns = {[id |-> t1, startTime |-> 2, commitTime |-> Empty]}
+
+State 6: <TxnRead(t1,k1) line 267, col 5 to line 275, col 68 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> Empty @@
+  t1 :> (k1 :> Empty @@ k2 :> Empty) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty] >>
+/\ clock = 3
+/\ runningTxns = {[id |-> t1, startTime |-> 2, commitTime |-> Empty]}
+
+State 7: <TxnUpdate(t1,k2,v1) line 278, col 5 to line 288, col 54 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> Empty @@
+  t1 :> (k1 :> Empty @@ k2 :> v1) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k2, val |-> v1] >>
+/\ clock = 3
+/\ runningTxns = {[id |-> t1, startTime |-> 2, commitTime |-> Empty]}
+
+State 8: <StartTxn(t0) line 179, col 5 to line 191, col 30 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> (k1 :> v1 @@ k2 :> Empty) @@
+  t1 :> (k1 :> Empty @@ k2 :> v1) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k2, val |-> v1],
+   [type |-> "begin", txnId |-> t0, time |-> 4] >>
+/\ clock = 4
+/\ runningTxns = { [id |-> t0, startTime |-> 4, commitTime |-> Empty],
+  [id |-> t1, startTime |-> 2, commitTime |-> Empty] }
+
+State 9: <TxnRead(t0,k1) line 267, col 5 to line 275, col 68 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> (k1 :> v1 @@ k2 :> Empty) @@
+  t1 :> (k1 :> Empty @@ k2 :> v1) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k2, val |-> v1],
+   [type |-> "begin", txnId |-> t0, time |-> 4],
+   [type |-> "read", txnId |-> t0, key |-> k1, val |-> v1] >>
+/\ clock = 4
+/\ runningTxns = { [id |-> t0, startTime |-> 4, commitTime |-> Empty],
+  [id |-> t1, startTime |-> 2, commitTime |-> Empty] }
+
+State 10: <TxnRead(t0,k2) line 267, col 5 to line 275, col 68 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> (k1 :> v1 @@ k2 :> Empty) @@
+  t1 :> (k1 :> Empty @@ k2 :> v1) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k2, val |-> v1],
+   [type |-> "begin", txnId |-> t0, time |-> 4],
+   [type |-> "read", txnId |-> t0, key |-> k1, val |-> v1],
+   [type |-> "read", txnId |-> t0, key |-> k2, val |-> Empty] >>
+/\ clock = 4
+/\ runningTxns = { [id |-> t0, startTime |-> 4, commitTime |-> Empty],
+  [id |-> t1, startTime |-> 2, commitTime |-> Empty] }
+
+State 11: <CommitTxn(t0) line 217, col 5 to line 236, col 33 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> (k1 :> v1 @@ k2 :> Empty) @@
+  t1 :> (k1 :> Empty @@ k2 :> v1) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> Empty)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k2, val |-> v1],
+   [type |-> "begin", txnId |-> t0, time |-> 4],
+   [type |-> "read", txnId |-> t0, key |-> k1, val |-> v1],
+   [type |-> "read", txnId |-> t0, key |-> k2, val |-> Empty],
+   [type |-> "commit", txnId |-> t0, time |-> 5, updatedKeys |-> {}] >>
+/\ clock = 5
+/\ runningTxns = {[id |-> t1, startTime |-> 2, commitTime |-> Empty]}
+
+State 12: <CommitTxn(t1) line 217, col 5 to line 236, col 33 of module SnapshotIsolation>
+/\ txnSnapshots = ( t0 :> (k1 :> v1 @@ k2 :> Empty) @@
+  t1 :> (k1 :> Empty @@ k2 :> v1) @@
+  t2 :> (k1 :> v1 @@ k2 :> Empty) )
+/\ dataStore = (k1 :> v1 @@ k2 :> v1)
+/\ txnHistory = << [type |-> "begin", txnId |-> t2, time |-> 1],
+   [type |-> "write", txnId |-> t2, key |-> k1, val |-> v1],
+   [type |-> "begin", txnId |-> t1, time |-> 2],
+   [type |-> "commit", txnId |-> t2, time |-> 3, updatedKeys |-> {k1}],
+   [type |-> "read", txnId |-> t1, key |-> k1, val |-> Empty],
+   [type |-> "write", txnId |-> t1, key |-> k2, val |-> v1],
+   [type |-> "begin", txnId |-> t0, time |-> 4],
+   [type |-> "read", txnId |-> t0, key |-> k1, val |-> v1],
+   [type |-> "read", txnId |-> t0, key |-> k2, val |-> Empty],
+   [type |-> "commit", txnId |-> t0, time |-> 5, updatedKeys |-> {}],
+   [type |-> "commit", txnId |-> t1, time |-> 6, updatedKeys |-> {k2}] >>
+/\ clock = 6
+/\ runningTxns = {}
+
+The number of states generated: 2624759
+Simulation using seed 6716861192212514348 and aril 0
+Progress: 2624866 states checked, 238625 traces generated (trace length: mean=2, var(x)=81, sd=9)
+Finished in 23s at (2024-11-20 20:28:50)
