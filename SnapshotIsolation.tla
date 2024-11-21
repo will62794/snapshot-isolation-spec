@@ -427,11 +427,11 @@ RWDependency(h, t1Id, t2Id) ==
 \* by defining the appropriate set comprehension, where the produced set contains all the edges of the graph.
 SerializationGraph(history) == 
     LET committedTxnIds == CommittedTxns(history) IN
-    {<<t1, t2>> \in (committedTxnIds \X committedTxnIds):
-        /\ t1 /= t2
-        /\ \/ WWDependency(history, t1, t2)
-           \/ WRDependency(history, t1, t2)
-           \/ RWDependency(history, t1, t2)}
+    {tedge \in (committedTxnIds \X committedTxnIds):
+        /\ tedge[1] /= tedge[2]
+        /\ \/ WWDependency(history, tedge[1], tedge[2])
+           \/ WRDependency(history, tedge[1], tedge[2])
+           \/ RWDependency(history, tedge[1], tedge[2])}
 
 \* The key property to verify i.e. serializability of transaction histories.
 IsConflictSerializable(h) == ~IsCycle(SerializationGraph(h))
