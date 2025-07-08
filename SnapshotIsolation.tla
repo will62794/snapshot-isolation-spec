@@ -216,8 +216,7 @@ CommitTxn(txnId) ==
     \* committed transactions.
     /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
-    /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}
-    /\ TxnCanCommit(txnId)  
+    /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}  
     /\ LET commitOp == [ type          |-> "commit", 
                          txnId         |-> txnId, 
                          time          |-> clock + 1,
@@ -241,6 +240,7 @@ CommitTxn(txnId) ==
 AbortTxn(txnId) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
+    /\ FALSE
     /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
     /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}
@@ -607,14 +607,94 @@ ViewEquivalentHistory(h) == {ExecuteSerialHistory(serial) : serial \in
 
 IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))
 
+
+
+(**************************************************************************************************)
+(* G-Single Anomaly (Experimental).                                                               *)
+(*                                                                                                *)
+(* G-Single anomaly is where there is a dependency cycle where there is a exactly one RW          *)
+(* edge in the cycle                                                                              *)
+(**************************************************************************************************)
+
+\* Returns TRUE if there is a simple cycle of length 3 in the edge set
+Nodes(edges) == {e[1] : e \in edges} \cup {e[2] : e \in edges}
+
+\* Returns TRUE if there is a simple cycle of length 3 in the edge set
+Has3NodeCycle(edges) ==
+    \E a \in Nodes(edges) :
+      \E b \in Nodes(edges) :
+        \E c \in Nodes(edges) :
+          /\ a /= b /\ b /= c /\ c /= a
+          /\ <<a, b>> \in edges
+          /\ <<b, c>> \in edges
+          /\ <<c, a>> \in edges
+
+\* Returns TRUE if there is a simple cycle of length 2 in the edge set
+Has2NodeCycle(edges) ==
+    LET edgePairs == {<<e[1], e[2]>> : e \in edges}
+    IN \E a \in Nodes(edges) :
+         \E b \in Nodes(edges) :
+           /\ a /= b
+           /\ <<a, b>> \in edgePairs
+           /\ <<b, a>> \in edgePairs
+           /\ Cardinality({p \in edgePairs : p = <<a, b>>}) = 1
+           /\ Cardinality({p \in edgePairs : p = <<b, a>>}) = 1
+
+\* Returns TRUE if there is a single RW edge in any 2 node cycle detected in the edge set
+HasSingleRWEdge(edges) ==
+    \E a \in Nodes(edges) :
+      \E b \in Nodes(edges) :
+        /\ a /= b
+        \* Check that there are edges in both directions between a and b
+        /\ <<a, b>> \in {<<e[1], e[2]>> : e \in edges}
+        /\ <<b, a>> \in {<<e[1], e[2]>> : e \in edges}
+        \* Count total RW edges between a and b (in both directions)
+        /\ Cardinality({e \in edges : 
+                           /\ (<<e[1], e[2]>> = <<a, b>> \/ <<e[1], e[2]>> = <<b, a>>)
+                           /\ e[3] = "RW"}) = 1
+
+\* Returns the serialization graph with edge types.
+SerializationGraphWithEdgeTypes(history) == 
+    LET committedTxnIds == CommittedTxns(history) IN
+    {<<t1, t2, edgeType>> \in (committedTxnIds \X committedTxnIds \X {"WW", "WR", "RW"}):
+        /\ t1 /= t2
+        /\ \/ (edgeType = "WW" /\ WWDependency(history, t1, t2))
+           \/ (edgeType = "WR" /\ WRDependency(history, t1, t2))
+           \/ (edgeType = "RW" /\ RWDependency(history, t1, t2))}
+
+GSingle(h) == HasSingleRWEdge(SerializationGraphWithEdgeTypes(h))
+
+GSingleInv == ~GSingle(txnHistory)
+
+
+\* Returns the set of 2-node cycles found in the edge set
+\* Each cycle is represented as a set of 2 nodes {a, b}
+Find2NodeCycles(edges) ==
+    LET nodeSet == Nodes(edges)
+    IN { <<a, b>> \in (nodeSet \X nodeSet):
+        /\ a /= b
+        /\ <<a, b>> \in edges
+        /\ <<b, a>> \in edges }
+
+\* Returns the first 3-node cycle found (for debugging/display purposes)
+First2NodeCycle(edges) ==
+    CHOOSE cycle \in Find2NodeCycles(edges) : TRUE
+
+\* For debugging within the model checker in VSCode
+Alias == [
+    txnHistory |-> txnHistory,
+    sergraph |-> SerializationGraphWithEdgeTypes(txnHistory),
+    isCycle |-> IsCycle(SerializationGraph(txnHistory)),
+    nodesSet |-> First2NodeCycle(SerializationGraph(txnHistory))
+    \* edgeCardinalities |-> TxnHistoryCardinality(txnHistory)
+]
+
+
 -------------------------------------------------
 
 \* Some model checking details.
 
 Symmetry == Permutations(keys) \cup Permutations(values) \cup Permutations(txnIds)
-
-
-
 
 -------------------------------------------------
 
