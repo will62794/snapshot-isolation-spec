@@ -308,7 +308,7 @@ Next ==
     \* histories, we require that a transaction does at least one operation before committing or aborting. 
     \* Assumes that the given transaction is currently running.
     \/ \E tid \in txnIds : CommitTxn(tid)
-    \/ \E tid \in txnIds : AbortTxn(tid)
+    \* \/ \E tid \in txnIds : AbortTxn(tid)
     \* Transaction reads or writes a key. We limit transactions
     \* to only read or write the same key once.
     \/ \E tid \in txnIds, k \in keys : TxnRead(tid, k)
@@ -608,26 +608,41 @@ ViewEquivalentHistory(h) == {ExecuteSerialHistory(serial) : serial \in
 IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))
 
 
+ThreeWWRWCycle == <<
+    [type |-> "begin",  txnId |-> 0, time |-> 1],
+    [type |-> "begin",  txnId |-> 1, time |-> 2],
+    [type |-> "begin",  txnId |-> 2, time |-> 3],
+    
+    \* T2 reads k1 early (for T0→RW T2)
+    [type |-> "read",   txnId |-> 2, key |-> "k1", val |-> "Empty"],
+    
+    \* T0 writes k1 and k2, commits first
+    [type |-> "write",  txnId |-> 0, key |-> "k1", val |-> "v1"],
+    [type |-> "write",  txnId |-> 0, key |-> "k2", val |-> "v1"],
+    [type |-> "commit", txnId |-> 0, time |-> 4, updatedKeys |-> {"k1", "k2"}],
+    
+    \* T1 writes k2 after T0 (creates T0→WW T1) and k3
+    [type |-> "write",  txnId |-> 1, key |-> "k2", val |-> "v2"],
+    [type |-> "write",  txnId |-> 1, key |-> "k3", val |-> "v1"],
+    [type |-> "commit", txnId |-> 1, time |-> 5, updatedKeys |-> {"k2", "k3"}],
+    
+    \* T2 writes k3 after T1 (creates T1→WW T2) - k1 write creates T2→RW T0
+    [type |-> "write",  txnId |-> 2, key |-> "k3", val |-> "v2"],
+    [type |-> "commit", txnId |-> 2, time |-> 6, updatedKeys |-> {"k3"}]
+>>
+
 
 (**************************************************************************************************)
 (* G-Single Anomaly (Experimental).                                                               *)
 (*                                                                                                *)
-(* G-Single anomaly is where there is a dependency cycle where there is a exactly one RW          *)
-(* edge in the cycle                                                                              *)
+(* G-Single anomaly is where there is a dependency cycle of any length that contains exactly      *)
+(* one RW edge. This is a specific type of non-serializable schedule that can occur under         *)
+(* snapshot isolation.                                                                             *)
 (**************************************************************************************************)
 
 \* Returns TRUE if there is a simple cycle of length 3 in the edge set
 Nodes(edges) == {e[1] : e \in edges} \cup {e[2] : e \in edges}
 
-\* Returns TRUE if there is a simple cycle of length 3 in the edge set
-Has3NodeCycle(edges) ==
-    \E a \in Nodes(edges) :
-      \E b \in Nodes(edges) :
-        \E c \in Nodes(edges) :
-          /\ a /= b /\ b /= c /\ c /= a
-          /\ <<a, b>> \in edges
-          /\ <<b, c>> \in edges
-          /\ <<c, a>> \in edges
 
 \* Returns TRUE if there is a simple cycle of length 2 in the edge set
 Has2NodeCycle(edges) ==
@@ -640,18 +655,19 @@ Has2NodeCycle(edges) ==
            /\ Cardinality({p \in edgePairs : p = <<a, b>>}) = 1
            /\ Cardinality({p \in edgePairs : p = <<b, a>>}) = 1
 
-\* Returns TRUE if there is a single RW edge in any 2 node cycle detected in the edge set
-HasSingleRWEdge(edges) ==
+\* Returns TRUE if there is a simple cycle of length 3 in the edge set
+Has3NodeCycle(edges) ==
+    \* LET edgePairs == {<<e[1], e[2]>> : e \in edges}
     \E a \in Nodes(edges) :
-      \E b \in Nodes(edges) :
-        /\ a /= b
-        \* Check that there are edges in both directions between a and b
-        /\ <<a, b>> \in {<<e[1], e[2]>> : e \in edges}
-        /\ <<b, a>> \in {<<e[1], e[2]>> : e \in edges}
-        \* Count total RW edges between a and b (in both directions)
-        /\ Cardinality({e \in edges : 
-                           /\ (<<e[1], e[2]>> = <<a, b>> \/ <<e[1], e[2]>> = <<b, a>>)
-                           /\ e[3] = "RW"}) = 1
+         \E b \in Nodes(edges) :
+           \E c \in Nodes(edges) :
+          /\ a /= b /\ b /= c /\ c /= a
+          /\ <<a, b>> \in edges
+          /\ <<b, c>> \in edges
+          /\ <<c, a>> \in edges
+        \*   /\ Cardinality({p \in edgePairs : p = <<a, b>>}) = 1
+        \*   /\ Cardinality({p \in edgePairs : p = <<b, c>>}) = 1
+        \*   /\ Cardinality({p \in edgePairs : p = <<c, a>>}) = 1
 
 \* Returns the serialization graph with edge types.
 SerializationGraphWithEdgeTypes(history) == 
@@ -661,11 +677,6 @@ SerializationGraphWithEdgeTypes(history) ==
         /\ \/ (edgeType = "WW" /\ WWDependency(history, t1, t2))
            \/ (edgeType = "WR" /\ WRDependency(history, t1, t2))
            \/ (edgeType = "RW" /\ RWDependency(history, t1, t2))}
-
-GSingle(h) == HasSingleRWEdge(SerializationGraphWithEdgeTypes(h))
-
-GSingleInv == ~GSingle(txnHistory)
-
 
 \* Returns the set of 2-node cycles found in the edge set
 \* Each cycle is represented as a set of 2 nodes {a, b}
@@ -680,12 +691,76 @@ Find2NodeCycles(edges) ==
 First2NodeCycle(edges) ==
     CHOOSE cycle \in Find2NodeCycles(edges) : TRUE
 
+
+HasSingleRWEdge(edges) ==
+    LET simpleEdges == {<<e[1], e[2]>> : e \in edges}
+    IN \E a \in Nodes(edges) :
+         \E b \in Nodes(edges) :
+           /\ a /= b
+           /\ <<a, b>> \in simpleEdges
+           /\ <<b, a>> \in simpleEdges
+           /\ Cardinality({e \in edges : 
+                              /\ (<<e[1], e[2]>> = <<a, b>> \/ <<e[1], e[2]>> = <<b, a>>)
+                              /\ e[3] = "RW"}) = 1
+
+\* 3 node cycle with one RW edge, one WR edge, and one WW edge
+GSingleInv3NodeCycleAllEdges == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 3
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 3
+      /\ \E a,b,c \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b,c}) = 3
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
+
+\* 3 node cycle with one RW edge and two WW edges
+GSingleInv3NodeCycleOnlyRWWW == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 3
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 3
+      /\ \E a,b,c \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b,c}) = 3
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
+
+\* 4 node cycle with 2 RW edges that are not adjacent (Still in the works)
+GNonadjacent4Node == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 4
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 4
+      /\ \E a,b,c,d \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b,c,d}) = 4
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, d, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<d, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
+
+Invariant == GSingleInv3NodeCycleAllEdges
+
+
+
+\* Find the cardinality of a given edge pair in the edge set
+FindCardinality(edges, pair) ==
+    Cardinality({e \in edges : <<e[1], e[2]>> = pair})
+
+\* Cardinality check for the actual transaction history (txnHistory)
+TxnHistoryCardinality(h) == 
+    LET detailedEdges == SerializationGraphWithEdgeTypes(h)
+        \* Extract just the node pairs (ignoring edge types) for cardinality checking
+        edgePairs == {<<e[1], e[2]>> : e \in detailedEdges}
+    IN [pair \in edgePairs |-> FindCardinality(detailedEdges, pair)]
+
 \* For debugging within the model checker in VSCode
 Alias == [
     txnHistory |-> txnHistory,
-    sergraph |-> SerializationGraphWithEdgeTypes(txnHistory),
-    isCycle |-> IsCycle(SerializationGraph(txnHistory)),
-    nodesSet |-> First2NodeCycle(SerializationGraph(txnHistory))
+    sergraph |-> SerializationGraphWithEdgeTypes(txnHistory)
+    \* isCycle |-> IsCycle(SerializationGraph(txnHistory)),
+    \* nodesSet |-> First2NodeCycle(SerializationGraph(txnHistory))
     \* edgeCardinalities |-> TxnHistoryCardinality(txnHistory)
 ]
 
@@ -767,6 +842,7 @@ nodeAttrsFn(n) == [
 txnGraph == SerializationGraph(txnHistory)
 AnimView == Group(<<DiGraph(txnIds,txnGraph,[n \in txnIds |-> nodeAttrsFn(n)])>>, [i \in {} |-> {}])
 
+\* tlc -workers 10 -deadlock -simulate -seed 5  -dumpTrace json trace.json -depth 20 SnapshotIsolation
 
 =============================================================================
 \* Modification History
