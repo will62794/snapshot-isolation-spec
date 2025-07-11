@@ -217,6 +217,7 @@ CommitTxn(txnId) ==
     /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
     /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}  
+    /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}  
     /\ LET commitOp == [ type          |-> "commit", 
                          txnId         |-> txnId, 
                          time          |-> clock + 1,
@@ -240,6 +241,7 @@ CommitTxn(txnId) ==
 AbortTxn(txnId) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
+    /\ FALSE
     /\ FALSE
     /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
@@ -308,6 +310,7 @@ Next ==
     \* histories, we require that a transaction does at least one operation before committing or aborting. 
     \* Assumes that the given transaction is currently running.
     \/ \E tid \in txnIds : CommitTxn(tid)
+    \* \/ \E tid \in txnIds : AbortTxn(tid)
     \* \/ \E tid \in txnIds : AbortTxn(tid)
     \* Transaction reads or writes a key. We limit transactions
     \* to only read or write the same key once.
@@ -608,36 +611,92 @@ ViewEquivalentHistory(h) == {ExecuteSerialHistory(serial) : serial \in
 IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, ExecuteSerialHistory(h2))
 
 
-ThreeWWRWCycle == <<
+(**************************************************************************************************)
+(* Experiments for G-Single and G-Nonadjacent Anomaly Cycle detection                             *)
+(**************************************************************************************************)
+
+GSingle3NodeCycle == <<
     [type |-> "begin",  txnId |-> 0, time |-> 1],
     [type |-> "begin",  txnId |-> 1, time |-> 2],
     [type |-> "begin",  txnId |-> 2, time |-> 3],
-    
+
     \* T2 reads k1 early (for T0→RW T2)
     [type |-> "read",   txnId |-> 2, key |-> "k1", val |-> "Empty"],
-    
+
     \* T0 writes k1 and k2, commits first
     [type |-> "write",  txnId |-> 0, key |-> "k1", val |-> "v1"],
     [type |-> "write",  txnId |-> 0, key |-> "k2", val |-> "v1"],
     [type |-> "commit", txnId |-> 0, time |-> 4, updatedKeys |-> {"k1", "k2"}],
-    
+
     \* T1 writes k2 after T0 (creates T0→WW T1) and k3
     [type |-> "write",  txnId |-> 1, key |-> "k2", val |-> "v2"],
     [type |-> "write",  txnId |-> 1, key |-> "k3", val |-> "v1"],
     [type |-> "commit", txnId |-> 1, time |-> 5, updatedKeys |-> {"k2", "k3"}],
-    
+
     \* T2 writes k3 after T1 (creates T1→WW T2) - k1 write creates T2→RW T0
     [type |-> "write",  txnId |-> 2, key |-> "k3", val |-> "v2"],
     [type |-> "commit", txnId |-> 2, time |-> 6, updatedKeys |-> {"k3"}]
 >>
 
 
+GSingle4NodeCycle == <<
+    [type |-> "begin",  txnId |-> 0, time |-> 1],
+    [type |-> "begin",  txnId |-> 1, time |-> 2], 
+    [type |-> "begin",  txnId |-> 2, time |-> 3],
+    
+    \* T2 reads k1 early (for T2→RW T0)
+    [type |-> "read",   txnId |-> 2, key |-> "k1", val |-> "Empty"],
+    
+    \* T0 writes k2 and k1, commits once
+    [type |-> "write",  txnId |-> 0, key |-> "k2", val |-> "v1"],
+    [type |-> "write",  txnId |-> 0, key |-> "k1", val |-> "v1"],
+    [type |-> "commit", txnId |-> 0, time |-> 4, updatedKeys |-> {"k2", "k1"}],
+    
+    \* T3 begins AFTER T0 commits (for T0→WR T3)
+    [type |-> "begin",  txnId |-> 3, time |-> 5],
+    [type |-> "read",   txnId |-> 3, key |-> "k2", val |-> "v1"],
+    [type |-> "write",  txnId |-> 3, key |-> "k3", val |-> "v1"],
+    [type |-> "commit", txnId |-> 3, time |-> 6, updatedKeys |-> {"k3"}],
+    
+    \* T1 writes k3 after T3 commits (creates T3→WW T1)
+    [type |-> "write",  txnId |-> 1, key |-> "k3", val |-> "v2"],
+    [type |-> "write",  txnId |-> 1, key |-> "k4", val |-> "v1"],
+    [type |-> "commit", txnId |-> 1, time |-> 7, updatedKeys |-> {"k3", "k4"}],
+    
+    \* T2 writes k4 after T1 commits (creates T1→WW T2)
+    [type |-> "write",  txnId |-> 2, key |-> "k4", val |-> "v3"],
+    [type |-> "commit", txnId |-> 2, time |-> 8, updatedKeys |-> {"k4"}]
+>>
+
+
+GNonadjacentTest4Node == <<
+    [type |-> "begin",  txnId |-> 3, time |-> 1], \* T3 begins
+    [type |-> "read",   txnId |-> 3, key |-> "k1", val |-> "Empty"], \* T3 reads k1=0
+    [type |-> "write",  txnId |-> 3, key |-> "k5", val |-> "v2"], \* T3 writes k5=v2
+    [type |-> "begin",  txnId |-> 1, time |-> 2], \* T1 begins
+    [type |-> "write",  txnId |-> 1, key |-> "k6", val |-> "v1"], \* T1 writes k6=v1
+    [type |-> "begin",  txnId |-> 2, time |-> 3], \* T2 begins
+    [type |-> "write",  txnId |-> 1, key |-> "k2", val |-> "v1"], \* T2 writes k2=v1
+    [type |-> "write",  txnId |-> 3, key |-> "k3", val |-> "v2"], \* T2 writes k3=v2
+    [type |-> "read",   txnId |-> 3, key |-> "k4", val |-> "Empty"], \* T3 reads k4=0
+    [type |-> "commit", txnId |-> 1, time |-> 4, updatedKeys |-> {}], \* T1 commits
+    [type |-> "begin",  txnId |-> 0, time |-> 5], \* T0 begins
+    [type |-> "read",   txnId |-> 0, key |-> "k6", val |-> "v1"], \* T0 reads k6=v1
+    [type |-> "write",  txnId |-> 2, key |-> "k5", val |-> "v1"], \* T2 writes k5=v1
+    [type |-> "read",   txnId |-> 2, key |-> "k6", val |-> "Empty"], \* T2 reads k6=Empty
+    [type |-> "commit", txnId |-> 3, time |-> 6, updatedKeys |-> {}], \* T2 commits
+    [type |-> "read", txnId |-> 0, key |-> "k3", val |-> "Empty"], \* T0 reads k3=Empty
+    [type |-> "commit", txnId |-> 2, time |-> 7, updatedKeys |-> {}], \* T0 commits
+    [type |-> "commit", txnId |-> 0, time |-> 8, updatedKeys |-> {}] \* T0 commits
+>>
+
+
 (**************************************************************************************************)
-(* G-Single Anomaly (Experimental).                                                               *)
+(* G-Single and G-Nonadjacent Anomaly (Experimental).                                             *)
 (*                                                                                                *)
 (* G-Single anomaly is where there is a dependency cycle of any length that contains exactly      *)
 (* one RW edge. This is a specific type of non-serializable schedule that can occur under         *)
-(* snapshot isolation.                                                                             *)
+(* snapshot isolation.                                                                            *)
 (**************************************************************************************************)
 
 \* Returns TRUE if there is a simple cycle of length 3 in the edge set
@@ -706,13 +765,14 @@ HasSingleRWEdge(edges) ==
 \* 3 node cycle with one RW edge, one WR edge, and one WW edge
 GSingleInv3NodeCycleAllEdges == 
     ~(
+      /\ ~Has2NodeCycle(SerializationGraph(txnHistory))
       /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 3
       /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 3
       /\ \E a,b,c \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
         /\ Cardinality({a,b,c}) = 3
-        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<b, c, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        \* /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        \* /\ <<b, c, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        \* /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
 \* 3 node cycle with one RW edge and two WW edges
@@ -727,20 +787,21 @@ GSingleInv3NodeCycleOnlyRWWW ==
         /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
-\* 4 node cycle with 2 RW edges that are not adjacent (Still in the works)
-GNonadjacent4Node == 
+
+\* 4 node cycle with 2 RW edges that are not adjacent (Works but takes 5hrs to detect)
+GSingleInv4 == 
     ~(
       /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 4
       /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 4
       /\ \E a,b,c,d \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
         /\ Cardinality({a,b,c,d}) = 4
         /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<c, d, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<d, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<b, c, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<c, d, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<d, a, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
-Invariant == GSingleInv3NodeCycleAllEdges
+Invariant == GSingleInv4
 
 
 
@@ -842,6 +903,7 @@ nodeAttrsFn(n) == [
 txnGraph == SerializationGraph(txnHistory)
 AnimView == Group(<<DiGraph(txnIds,txnGraph,[n \in txnIds |-> nodeAttrsFn(n)])>>, [i \in {} |-> {}])
 
+\* tlc -workers 10 -deadlock -simulate -seed 5  -dumpTrace json trace.json -depth 20 SnapshotIsolation
 \* tlc -workers 10 -deadlock -simulate -seed 5  -dumpTrace json trace.json -depth 20 SnapshotIsolation
 
 =============================================================================
