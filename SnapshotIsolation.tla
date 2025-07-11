@@ -217,7 +217,6 @@ CommitTxn(txnId) ==
     /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
     /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}  
-    /\ (WritesByTxn(txnHistory, txnId) \cup ReadsByTxn(txnHistory, txnId)) /= {}  
     /\ LET commitOp == [ type          |-> "commit", 
                          txnId         |-> txnId, 
                          time          |-> clock + 1,
@@ -241,7 +240,6 @@ CommitTxn(txnId) ==
 AbortTxn(txnId) ==
     \* If a transaction can't commit due to write conflicts, then it
     \* must abort.
-    /\ FALSE
     /\ FALSE
     /\ txnId \in RunningTxnIds
     \* Must not be a no-op transaction.
@@ -310,7 +308,6 @@ Next ==
     \* histories, we require that a transaction does at least one operation before committing or aborting. 
     \* Assumes that the given transaction is currently running.
     \/ \E tid \in txnIds : CommitTxn(tid)
-    \* \/ \E tid \in txnIds : AbortTxn(tid)
     \* \/ \E tid \in txnIds : AbortTxn(tid)
     \* Transaction reads or writes a key. We limit transactions
     \* to only read or write the same key once.
@@ -615,7 +612,7 @@ IsViewSerializable(h) == \E h2 \in SerialHistories(h) : IsViewEquivalent(h, Exec
 (* Experiments for G-Single and G-Nonadjacent Anomaly Cycle detection                             *)
 (**************************************************************************************************)
 
-GSingle3NodeCycle == <<
+GSingle3NodeCycleTest == <<
     [type |-> "begin",  txnId |-> 0, time |-> 1],
     [type |-> "begin",  txnId |-> 1, time |-> 2],
     [type |-> "begin",  txnId |-> 2, time |-> 3],
@@ -639,7 +636,7 @@ GSingle3NodeCycle == <<
 >>
 
 
-GSingle4NodeCycle == <<
+GSingle4NodeCycleTest == <<
     [type |-> "begin",  txnId |-> 0, time |-> 1],
     [type |-> "begin",  txnId |-> 1, time |-> 2], 
     [type |-> "begin",  txnId |-> 2, time |-> 3],
@@ -669,7 +666,7 @@ GSingle4NodeCycle == <<
 >>
 
 
-GNonadjacentTest4Node == <<
+GNonadjacent4NodeTest == <<
     [type |-> "begin",  txnId |-> 3, time |-> 1], \* T3 begins
     [type |-> "read",   txnId |-> 3, key |-> "k1", val |-> "Empty"], \* T3 reads k1=0
     [type |-> "write",  txnId |-> 3, key |-> "k5", val |-> "v2"], \* T3 writes k5=v2
@@ -902,9 +899,6 @@ nodeAttrsFn(n) == [
 
 txnGraph == SerializationGraph(txnHistory)
 AnimView == Group(<<DiGraph(txnIds,txnGraph,[n \in txnIds |-> nodeAttrsFn(n)])>>, [i \in {} |-> {}])
-
-\* tlc -workers 10 -deadlock -simulate -seed 5  -dumpTrace json trace.json -depth 20 SnapshotIsolation
-\* tlc -workers 10 -deadlock -simulate -seed 5  -dumpTrace json trace.json -depth 20 SnapshotIsolation
 
 =============================================================================
 \* Modification History
