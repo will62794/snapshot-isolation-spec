@@ -155,6 +155,23 @@ IndexOfOp(h, op) == CHOOSE i \in DOMAIN h : h[i] = op
 
 RunningTxnIds == {txn.id : txn \in runningTxns}
 
+\* Checks if two transactions are concurrent (their lifetimes overlap).
+\* Two transactions are concurrent if they were running at the same time.
+\* Uses commit time if available, otherwise considers the transaction as still running.
+AreConcurrent(h, t1Id, t2Id) ==
+    /\ t1Id /= t2Id
+    /\ \E t1BeginOp \in Range(h) : t1BeginOp.txnId = t1Id /\ t1BeginOp.type = "begin"
+    /\ \E t2BeginOp \in Range(h) : t2BeginOp.txnId = t2Id /\ t2BeginOp.type = "begin"
+    /\ LET t1Start == BeginOp(h, t1Id).time
+           t2Start == BeginOp(h, t2Id).time
+           \* Get commit time if transaction committed, otherwise use a very large number
+           t1End == IF t1Id \in CommittedTxns(h) THEN CommitOp(h, t1Id).time ELSE 999999
+           t2End == IF t2Id \in CommittedTxns(h) THEN CommitOp(h, t2Id).time ELSE 999999
+       IN
+       \* Check if intervals [t1Start, t1End] and [t2Start, t2End] overlap
+       /\ t1Start <= t2End
+       /\ t2Start <= t1End
+
 (**************************************************************************************************)
 (*                                                                                                *)
 (* Action Definitions                                                                             *)
@@ -189,8 +206,7 @@ StartTxn(newTxnId) ==
     \* Tick the clock.
     /\ clock' = clock + 1    
     /\ UNCHANGED <<dataStore>>
-                          
-                        
+                                                  
 (**************************************************************************************************)
 (* When a transaction T0 is ready to commit, it obeys the "First Committer Wins" rule.  T0 will   *)
 (* only successfully commit if no concurrent transaction has already committed writes of data     *)
@@ -734,6 +750,17 @@ SerializationGraphWithEdgeTypes(history) ==
            \/ (edgeType = "WR" /\ WRDependency(history, t1, t2))
            \/ (edgeType = "RW" /\ RWDependency(history, t1, t2))}
 
+\* Returns the serialization graph with edge types and concurrency information.
+\* Output format: <<t1, t2, edgeType, concurrent_or_not>>
+SerializationGraphWithCC(history) == 
+    LET committedTxnIds == CommittedTxns(history) IN
+    {<<t1, t2, edgeType, cclabel>> \in (committedTxnIds \X committedTxnIds \X {"WW", "WR", "RW"} \X {"concurrent", "not_concurrent"}):
+        /\ t1 /= t2
+        /\ \/ (edgeType = "WW" /\ WWDependency(history, t1, t2))
+           \/ (edgeType = "WR" /\ WRDependency(history, t1, t2))
+           \/ (edgeType = "RW" /\ RWDependency(history, t1, t2))
+        /\ cclabel = IF AreConcurrent(history, t1, t2) THEN "concurrent" ELSE "not_concurrent"}
+
 \* Returns the set of 2-node cycles found in the edge set
 \* Each cycle is represented as a set of 2 nodes {a, b}
 Find2NodeCycles(edges) ==
@@ -773,14 +800,26 @@ GSingleInv3NodeCycleAllEdges ==
     )
 
 \* 3 node cycle with one RW edge and two WW edges
-GSingleInv3NodeCycleOnlyRWWW == 
+GSingleInv3NodeCycleOnlyRWWR == 
     ~(
       /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 3
       /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 3
       /\ \E a,b,c \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
         /\ Cardinality({a,b,c}) = 3
         /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, a, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
+
+\* 3 node cycle with exactly one RW edge, one WW edge, and one WR edge
+ThreeNodeCycleRWWWWR == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) = 3
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 3
+      /\ \E a,b,c \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b,c}) = 3
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
         /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
@@ -794,11 +833,11 @@ GSingleInv4 ==
         /\ Cardinality({a,b,c,d}) = 4
         /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
         /\ \E ty \in {"WR", "WW"} : <<b, c, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ \E ty \in {"WR", "WW"} : <<c, d, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, d, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
         /\ \E ty \in {"WR", "WW"} : <<d, a, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
-Invariant == GSingleInv4
+Invariant == ThreeNodeCycleRWWWWR
 
 
 
@@ -816,7 +855,8 @@ TxnHistoryCardinality(h) ==
 \* For debugging within the model checker in VSCode
 Alias == [
     txnHistory |-> txnHistory,
-    sergraph |-> SerializationGraphWithEdgeTypes(txnHistory)
+    sergraph |-> SerializationGraphWithEdgeTypes(txnHistory),
+    ccgraph |-> SerializationGraphWithCC(txnHistory)
     \* isCycle |-> IsCycle(SerializationGraph(txnHistory)),
     \* nodesSet |-> First2NodeCycle(SerializationGraph(txnHistory))
     \* edgeCardinalities |-> TxnHistoryCardinality(txnHistory)
