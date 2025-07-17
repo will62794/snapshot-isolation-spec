@@ -812,33 +812,71 @@ GSingleInv3NodeCycleOnlyRWWR ==
     )
 
 \* 3 node cycle with exactly one RW edge, one WW edge, and one WR edge
-ThreeNodeCycleRWWWWR == 
+ThreeNodeCycle == 
     ~(
       /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) = 3
       /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 3
       /\ \E a,b,c \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
         /\ Cardinality({a,b,c}) = 3
-        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<b, c, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        \* /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        \* /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        \* /\ <<c, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
 
-\* 4 node cycle with 2 RW edges that are not adjacent (Works but takes 5hrs to detect)
-GSingleInv4 == 
+\* 2 node cycle with one RW edge and one WR edge
+GSingle2Inv2NodeCycleRWWW == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 2
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 2
+      /\ \E a,b \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b}) = 2
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, a, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
+
+GNonadjacentInv4NodeCycle == 
     ~(
       /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 4
       /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 4
       /\ \E a,b,c,d \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
         /\ Cardinality({a,b,c,d}) = 4
         /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ \E ty \in {"WR", "WW"} : <<b, c, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ <<c, d, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
-        /\ \E ty \in {"WR", "WW"} : <<d, a, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, d, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<d, a, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
     )
 
-Invariant == ThreeNodeCycleRWWWWR
+GNonadjacentInv5NodeCycle == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 5
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 5
+      /\ \E a,b,c,d,e \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b,c,d,e}) = 5
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<b, c, "WW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, d, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<d, e, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<e, a, "WR">> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
 
+GNonadjacentInv6NodeCycle == 
+    ~(
+      /\ Cardinality(SerializationGraphWithEdgeTypes(txnHistory)) <= 6
+      /\ Cardinality(FindAllNodesInAnyCycle(SerializationGraph(txnHistory))) = 6
+      /\ \E a,b,c,d,e,f \in FindAllNodesInAnyCycle(SerializationGraph(txnHistory)) :
+        /\ Cardinality({a,b,c,d,e,f}) = 6
+        /\ <<a, b, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<b, c, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ <<c, d, "RW">> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<d, e, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<e, f, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+        /\ \E ty \in {"WR", "WW"} : <<f, a, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+    )
+
+\* /\ \E ty \in {"WR", "WW"} : <<d, a, ty>> \in SerializationGraphWithEdgeTypes(txnHistory)
+
+Invariant == ThreeNodeCycle
 
 
 \* Find the cardinality of a given edge pair in the edge set
@@ -855,7 +893,6 @@ TxnHistoryCardinality(h) ==
 \* For debugging within the model checker in VSCode
 Alias == [
     txnHistory |-> txnHistory,
-    sergraph |-> SerializationGraphWithEdgeTypes(txnHistory),
     ccgraph |-> SerializationGraphWithCC(txnHistory)
     \* isCycle |-> IsCycle(SerializationGraph(txnHistory)),
     \* nodesSet |-> First2NodeCycle(SerializationGraph(txnHistory))
